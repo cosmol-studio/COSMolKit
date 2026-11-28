@@ -41,7 +41,7 @@ impl IpcMatrixInput {
 
 #[pymethods]
 impl Molecule {
-    /// Total information content from exact characteristic-polynomial coefficients.
+    /// Total information content from floating-point characteristic-polynomial coefficients.
     #[pyo3(signature = (distance_matrix=None))]
     fn ipc(&self, py: Python<'_>, distance_matrix: Option<IpcMatrixInput>) -> PyResult<f64> {
         match distance_matrix {
@@ -50,7 +50,7 @@ impl Molecule {
         }
     }
 
-    /// Use entries equal to one in the lower triangle, including the diagonal.
+    /// Use every matrix entry equal to one, including the diagonal.
     fn ipc_with_distance_matrix(&self, py: Python<'_>, matrix: IpcMatrixInput) -> PyResult<f64> {
         matrix
             .with_matrix(py, |matrix| {

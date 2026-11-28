@@ -122,6 +122,18 @@ impl Corpus {
     }
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SmilesInput {
+    smiles: String,
+}
+
+pub(crate) fn smiles_inputs(rows: &[String]) -> Result<Vec<String>> {
+    rows.iter()
+        .map(|line| Ok(serde_json::from_str::<SmilesInput>(line)?.smiles))
+        .collect()
+}
+
 use std::io::Read;
 
 #[cfg(test)]

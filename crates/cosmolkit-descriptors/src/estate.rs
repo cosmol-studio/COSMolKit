@@ -1,5 +1,6 @@
 //! Electrotopological state of the atoms in a supplied molecular graph.
-//! RDKit 4ce8a0636f9b8ef28d6c3f4af4f502392c997d6b, GraphMol/Descriptors/EState.cpp.
+//! EState.py extrema follow RDKit 2026.09.1; the shared index loops also
+//! correspond to GraphMol/Descriptors/EState.cpp at 4ce8a063.
 //! Copyright (C) 2026 Glysade LLC and other RDKit contributors (BSD).
 
 use cosmolkit_core::{
@@ -136,27 +137,18 @@ pub struct EStateExtrema {
 }
 
 impl EStateExtrema {
-    pub fn from_indices(indices: &[f64]) -> Self {
-        // RDKit❗✔️: EStates calcEStates(const ROMol &mol) {
-        // RDKit❗✔️:   auto estates = calcEStateIndices(mol);
-        // RDKit❗✔️:
-        // RDKit❗✔️:   if(estates.empty()) {
-        // RDKit❗✔️:     return {};
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:
-        // RDKit❗✔️:   EStates res { estates, estates[0], estates[0], std::fabs(estates[0]), std::fabs(estates[0]) };
-        // RDKit❗✔️:
-        // RDKit❗✔️:   for(auto estate : estates) {
-        // RDKit❗✔️:     res.maxEState = std::max(res.maxEState, estate);
-        // RDKit❗✔️:     res.minEState = std::min(res.minEState, estate);
-        // RDKit❗✔️:     estate = std::fabs(estate);
-        // RDKit❗✔️:     res.maxAbsEState = std::max(res.maxAbsEState, estate);
-        // RDKit❗✔️:     res.minAbsEState = std::min(res.minAbsEState, estate);
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   return res;
-        // RDKit❗✔️: }
+    pub fn from_indices(indices: &[f64]) -> DescriptorResult<Self> {
+        // RDKit✔️✔️: def MaxEStateIndex(mol, force=1):
+        // RDKit✔️✔️:   return max(EStateIndices(mol, force))
+        // RDKit✔️✔️: def MinEStateIndex(mol, force=1):
+        // RDKit✔️✔️:   return min(EStateIndices(mol, force))
+        // RDKit✔️✔️: def MaxAbsEStateIndex(mol, force=1):
+        // RDKit✔️✔️:   return max(abs(x) for x in EStateIndices(mol, force))
+        // RDKit✔️✔️: def MinAbsEStateIndex(mol, force=1):
+        // RDKit✔️✔️:   return min(abs(x) for x in EStateIndices(mol, force))
+        // Python min/max reject an empty iterable; no extremum exists.
         let Some((&first, rest)) = indices.split_first() else {
-            return Self::default();
+            return Err(DescriptorError::EmptyEStateIndices);
         };
         let mut extrema = Self {
             maximum: first,
@@ -179,7 +171,7 @@ impl EStateExtrema {
                 extrema.minimum_absolute = magnitude;
             }
         }
-        extrema
+        Ok(extrema)
     }
 }
 

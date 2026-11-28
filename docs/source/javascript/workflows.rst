@@ -142,7 +142,7 @@ mass, Gasteiger charge, Crippen logP and molar refractivity, in that order.
 ``avgIpc()`` reports the entropy of the graph's characteristic-polynomial
 coefficient magnitudes; ``ipc()`` scales it by their sum. See the
 :doc:`descriptor guide </python/descriptors>` for the surface bins, matrix input
-convention and numerical differences from RDKit.
+convention and numerical behavior.
 
 Draw SVG and retain 2D coordinates
 ----------------------------------

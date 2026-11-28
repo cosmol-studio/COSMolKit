@@ -146,32 +146,6 @@ jobs:
             - name: Install pinned reference environment
               run: uv sync --locked --group dev
 
-            - name: Restore source-built descriptor oracles
-              id: descriptor_oracles
-              uses: actions/cache@v4
-              with:
-                  path: parity-tests/expected/descriptor-oracles
-                  key: descriptor-oracles-ubuntu24-${{ runner.arch }}-${{ hashFiles('testdata/reference/descriptor_foundations.json', 'parity-tests/tools/descriptor_reference/**') }}
-
-            - name: Install descriptor reference dependencies
-              run: |
-                  sudo apt-get update -qq
-                  sudo apt-get install -y --no-install-recommends libboost-dev libboost-serialization-dev libboost-iostreams-dev libboost-json-dev libeigen3-dev ninja-build
-
-            - name: Build both pinned RDKit descriptor references
-              if: steps.descriptor_oracles.outputs.cache-hit != 'true'
-              shell: bash
-              run: |
-                  set -euo pipefail
-                  for kind in master exact-ipc; do
-                      rev=$(jq -er --arg k "$kind" '.[$k]' testdata/reference/descriptor_foundations.json)
-                      src="$RUNNER_TEMP/rdkit-$kind"
-                      git -C third_party/rdkit fetch --no-tags --depth=1 origin "$rev"
-                      git -C third_party/rdkit worktree add --detach "$src" "$rev"
-                      bash parity-tests/tools/descriptor_reference/build.sh "$kind" "$src" \
-                        "$RUNNER_TEMP/build-$kind" parity-tests/expected/descriptor-oracles
-                  done
-
             # Exact identity prefix only: never restore another corpus/environment.
             # A unique suffix lets a repaired generation replace a corrupt cache.
             - name: Restore reference generations

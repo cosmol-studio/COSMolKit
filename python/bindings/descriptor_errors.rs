@@ -58,6 +58,7 @@ error_projection!(GasteigerChargeError, GasteigerChargeErrorKind, ck::GasteigerC
 }, source = Option<crate::error_framework::ErrorObject<ValenceError>>);
 
 error_projection!(DescriptorError, DescriptorErrorKind, ck::DescriptorError, "descriptors", {
+    EmptyEStateIndices,
     TopologyEdit { function, source },
     MissingFinalHydrogenState { field },
     InvalidConnectivityPath { function, expected_rows: usize, actual_rows: Option<usize> },
@@ -96,7 +97,8 @@ error_projection!(DescriptorError, DescriptorErrorKind, ck::DescriptorError, "de
     ck::DescriptorError::Search { source, .. } => Some(DescriptorSearchCause::from_rust(source.clone())),
     ck::DescriptorError::Stereo { source, .. } => Some(LegacyStereoError::from_rust(source.clone())),
     ck::DescriptorError::GasteigerCharge { source } => Some(GasteigerChargeError::from_rust(source.clone())),
-    ck::DescriptorError::MissingFinalHydrogenState { .. }
+    ck::DescriptorError::EmptyEStateIndices
+    | ck::DescriptorError::MissingFinalHydrogenState { .. }
     | ck::DescriptorError::InvalidConnectivityPath { .. }
     | ck::DescriptorError::InvalidHallKierContributionRows { .. }
     | ck::DescriptorError::MissingComputedScalar { .. }

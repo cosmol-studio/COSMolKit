@@ -13,25 +13,26 @@ impl Molecule {
     }
 
     fn estate_extrema(&self) -> Result<EStateExtrema, DescriptorReadError> {
-        Ok(EStateExtrema::from_indices(&self.estate_indices()?))
+        EStateExtrema::from_indices(&self.estate_indices()?)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
     }
 
-    /// Return the maximum EState index, or zero on an empty graph.
+    /// Return the maximum EState index; fail if the graph is empty.
     pub fn max_estate_index(&self) -> Result<f64, DescriptorReadError> {
         Ok(self.estate_extrema()?.maximum)
     }
 
-    /// Return the minimum EState index, or zero on an empty graph.
+    /// Return the minimum EState index; fail if the graph is empty.
     pub fn min_estate_index(&self) -> Result<f64, DescriptorReadError> {
         Ok(self.estate_extrema()?.minimum)
     }
 
-    /// Return the maximum absolute atom EState index, or zero on an empty graph.
+    /// Return the maximum absolute atom EState index; fail if the graph is empty.
     pub fn max_abs_estate_index(&self) -> Result<f64, DescriptorReadError> {
         Ok(self.estate_extrema()?.maximum_absolute)
     }
 
-    /// Return the minimum absolute atom EState index, or zero on an empty graph.
+    /// Return the minimum absolute atom EState index; fail if the graph is empty.
     pub fn min_abs_estate_index(&self) -> Result<f64, DescriptorReadError> {
         Ok(self.estate_extrema()?.minimum_absolute)
     }

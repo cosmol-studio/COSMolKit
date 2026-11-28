@@ -138,16 +138,26 @@ fn extrema_and_vsa_preserve_finite_components_next_to_nan() {
             rows[bad + 1].atom_charge().is_nan()
                 && rows[bad + 1].attached_hydrogen_charge().is_nan()
         );
-        assert!(
-            [
-                mol.min_partial_charge(),
-                mol.max_partial_charge(),
-                mol.min_abs_partial_charge(),
-                mol.max_abs_partial_charge()
-            ]
-            .into_iter()
-            .all(|result| result.unwrap().is_nan())
-        );
+        // Descriptors.py folds min(chg, minChg)/max(chg, maxChg):
+        // trailing finite atoms clear preceding NaNs; trailing NaNs persist.
+        let extrema = [
+            mol.min_partial_charge(),
+            mol.max_partial_charge(),
+            mol.min_abs_partial_charge(),
+            mol.max_abs_partial_charge(),
+        ]
+        .map(Result::unwrap);
+        if good > bad {
+            let expected = [
+                -0.3966637147812598_f64,
+                0.04022058174908642,
+                0.04022058174908642,
+                0.3966637147812598,
+            ];
+            assert_eq!(extrema.map(f64::to_bits), expected.map(f64::to_bits));
+        } else {
+            assert!(extrema.into_iter().all(f64::is_nan));
+        }
         let bins = mol.peoe_vsa().unwrap();
         assert_eq!(&bins[..13], &ethanol_area[..13]);
         assert!(bins[13] > ethanol_area[13]);

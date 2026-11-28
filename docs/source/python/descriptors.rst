@@ -144,7 +144,8 @@ atom's charge, even if it is infinite. With two or more atoms, a NaN or
 infinite charge makes the two charge extrema NaN. The other pairs keep their values.
 The sign bit of a NaN can differ from RDKit's for the same molecule.
 The Rust eigensolver is shared with WASM; its final eigenvalues can differ
-from RDKit's Eigen results in the last digits.
+from RDKit's Eigen results in the last digits. The parity runner treats such
+differences, including differing NaN bits, as failures.
 
 .. code-block:: python
 
@@ -176,7 +177,7 @@ The separate Labute hydrogen contribution is excluded in both directions.
 The default vectors refresh hydrogen-inclusive Labute rows. Numbered methods
 reuse that direction's last vector; a molecule copy starts with no saved
 EState vectors. The extrema (``min_estate_index()``, ``max_estate_index()``,
-``min_abs_estate_index()``, ``max_abs_estate_index()``) are zero on an empty graph.
+``min_abs_estate_index()``, ``max_abs_estate_index()``) raise a structured descriptor error on an empty graph.
 
 Graph information content
 -------------------------
@@ -198,14 +199,11 @@ counts as a vertex. Neither query needs coordinates or sanitization.
    assert molecule.avg_ipc(other) == 0
 
 To replace the bonds for one call, supply a square matrix with one row and
-column per atom, in graph order. Only entries exactly equal to one in its lower
-triangle count; a diagonal one adds a self-loop.
-COSMolKit reconstructs the coefficients as integers before computing entropy,
-as in `RDKit PR #9884 <https://github.com/rdkit/rdkit/pull/9884>`_. Results
-can differ from RDKit implementations that compute the coefficients in floating point.
-On long chains it can return a finite average when the total is positive infinity.
-Both results are NaN if the graph exceeds the algorithm's reconstruction bound,
-and both are zero for empty or edgeless graphs.
+column per atom, in graph order. Every entry exactly equal to one contributes
+to the adjacency matrix; a diagonal one adds a self-loop. An asymmetric input
+remains asymmetric. The floating-point polynomial recurrence follows RDKit
+2026.09.1 Python, including rounding and nonfinite results on large inputs.
+Both results are zero for empty or edgeless graphs.
 
 Formula Options
 ---------------

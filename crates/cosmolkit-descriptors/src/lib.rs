@@ -3156,6 +3156,9 @@ pub enum DescriptorSearchCause {
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum DescriptorError {
+    /// Python EState extrema reject an empty sequence.
+    #[error("EState extrema require at least one atom index")]
+    EmptyEStateIndices,
     #[error("descriptor `bcut2d`: {field} has {actual} rows; expected {expected}")]
     BcutDiagonalRows {
         field: &'static str,

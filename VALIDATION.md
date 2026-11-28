@@ -6,21 +6,110 @@ that section, independently of the version shown by the current API docs.
 
 ## Gasteiger, EState, BCUT2D and Ipc
 
-The [descriptor parity suites](parity-tests/README.md#build-the-descriptor-references)
-at COSMolKit `3202bcf3` compare Gasteiger, EState and BCUT2D with RDKit
-`4ce8a063`. Ipc and AvgIpc use a separate RDKit reference, `b9518c8a`, which
-computes exact characteristic-polynomial coefficients. Finite BCUT2D eigenvalues
-use a [per-eigenvalue tolerance](dev/test_boundaries.md#corpus-tests). The other
-tasks compare numerical results bit for bit.
+The ten added descriptor tasks use the ordinary `descriptors` suite and pinned
+RDKit Python 2026.09.1 reference preparation. Numerical fields compare exact
+encoded IEEE bits, with the maintainer-approved exception that corresponding
+NaNs match regardless of sign, payload or quiet/signaling bits.
+The PR #17 working tree (COSMolKit 0.6.4, measured 2026-11-27–28) was repaired
+against those Python sources. The table counts the ten added tasks only;
+all 58 ordinary descriptor tasks also ran as controls.
 
-| Corpus | Inputs | Matching values | Matching errors | Mismatches |
+| Input set | Inputs | Matching values | Matching errors | Mismatches |
 |---|---:|---:|---:|---:|
-| [Small SMILES corpus](parity-tests/testdata/corpora/smiles_small.smi) | 152 | 1,656 | 168 | 0 |
-| [Descriptor edge cases](parity-tests/testdata/corpora/descriptor_foundations.jsonl) | 19 | 220 | 8 | 0 |
+| Small SMILES corpus | 152 | 1,656 | 168 | 0 |
+| Retained descriptor boundary inputs | 19 | 219 | 9 | 0 |
+| Supplied asymmetric matrix on `CC` | 1 | 2 | 0 | 0 |
 
-Each comparison covers one descriptor call with one input and set of options.
-A returned vector counts as one value, with every entry checked. Neither run
-had a timeout.
+Each comparison is one call/profile; a vector counts once with all entries
+checked. The complete 58-task runs yielded 19,016 matching values and 1,656
+matching errors on the small corpus, and 2,574 matching values, 9 matching
+errors and one mismatch before the NaN decision. The subsequent boundary
+replay `run-tNGqnO` matches 2,575 values and 9 errors, with zero mismatches.
+Other reports: `run-uoqT9O`, `run-T4lci9` (retained historical failure) and
+`run-YPfuSB`, under `parity-tests/reports/`.
+No native crashes, undefined outcomes, timeouts or unfinished tasks occurred.
+The original reports precede the NaN-comparison decision below. Large-corpus
+results are recorded separately in the next subsection.
+
+Repairs restore Python charge-extrema NaN fold order, empty-EState errors,
+the wheel's Eigen 3.3.4 QR criteria and the released Python floating-point
+characteristic polynomial with full matrix inputs. IPC no longer uses the
+unmerged exact-integer reconstruction or its approximate lgamma budget.
+The measured reference environment uses NumPy 2.5.3 and OpenBLAS
+0.3.34.106.0 (SkylakeX); ordered reductions reproduce that environment.
+
+The former strict failure was the BCUT charge pair for boundary index 18 (zero-based):
+`C.[C+9]([F])([F])([F])([F])([F])([F])([F])([F])([F])([F])([F])([F])[F]`.
+Both implementations produce quiet NaN, with bits `7ff8000000000000` in CK
+and `fff8000000000000` in the Python wheel. Instrumentation located NaN
+propagation differences in Eigen's rank-two update; the same Rust source
+produces negative NaN extrema at O0 and positive NaN at O3. Arithmetic NaN
+signs are not specified by Rust. This compiler-dependent bit difference
+was a mismatch under the former raw-bit rule. The maintainer subsequently
+approved matching corresponding NaNs without comparing their bit patterns.
+The comparator now applies that rule to typed floating fields, including
+nested lists, while preserving raw encodings and exact comparison elsewhere.
+This exception does not make NaN match finite values or infinities.
+
+The pre-repair failures remain recorded: the ten tasks had 90 mismatches on
+the small corpus, 5 on the boundary inputs and 2 on the asymmetric matrix.
+Their original reports (`run-k0l9UI`, `run-S1j9pr`, `run-WuHyzS`) and reference
+generations remain intact. All replays reused those references read-only.
+
+Final ordinary validation completed with 10,570 passed, 0 failed and 84 ignored
+(`cargo test --workspace --locked --no-fail-fast --exclude cosmolkit-parity-tests
+--features cosmolkit/op-contracts-strict`, unoptimized with debug info disabled).
+The parity runner's 39 unit tests (including NaN comparison), affected descriptor owner tests, strict
+facade/core checks and WASM descriptor build passed. Official Python stub
+generation, the fixed runtime/type samples and registration checks passed;
+registration matched 2,556 runtime and stub paths. These framework checks do
+not claim every configuration assignment was exercised. An obsolete charge
+NaN-fold assertion failed in the first workspace run; its two orderings were
+corrected from pinned Python source and the complete workspace rerun passed.
+
+The historical PR report at `3202bcf3` used separate RDKit C++ references
+`4ce8a063` / `b9518c8a` and BCUT tolerance: 152 small SMILES inputs yielded
+1,656 matching values and 168 matching errors; 19 boundary inputs yielded
+220 matching values and 8 matching errors, with zero reported mismatches.
+Those measurements are retained as history and do not apply to the current
+Python-reference, bit-exact comparison.
+
+### Completed 5k and million descriptor comparisons
+
+RDKit Python 2026.09.1 references were prepared for all 58 descriptor tasks on
+the existing 5,000-record corpus and ten original 100,000-record ChEMBL batches
+(1,000,000 records). The initial complete comparisons found 2 mismatches on 5k
+and 4,402 on the million inputs, all in Ipc/AvgIpc; the other 56 tasks passed.
+Original commands, exits and failed reports remain under
+`target/pr17-descriptor-large-20261127/`.
+
+Source bisection located the first difference in matrix multiplication, before
+entropy: the port omitted OpenBLAS 0.3.34's large-product K blocking and
+12-column kernel tail reductions. The Rust descriptor owner now reproduces
+those source-defined block boundaries and two-/four-lane accumulation orders.
+No tolerance, output correction, reference regeneration or binding-specific
+algorithm was added. A focused owner regression covers these arithmetic paths.
+
+Both affected tasks were then replayed over every original input, using the
+same immutable references, `--release --locked` and strict operation contracts:
+
+| Inputs | Ipc/AvgIpc comparisons | Matching values | Matching errors | Mismatches |
+|---|---:|---:|---:|---:|
+| 5,000 | 10,000 | 10,000 | 0 | 0 |
+| 1,000,000 | 2,000,000 | 1,999,992 | 8 | 0 |
+
+All 11 replays exited zero. There were no timeouts, native crashes, undefined
+outcomes or unfinished selections. All 4,404 previously observed differences
+are closed. The other 56 descriptor results are the unchanged initial runs;
+this does not claim a second complete 58-task run after the IPC-only repair.
+The 5k replay is `run-2yiP8w`; the million replays span `run-Qf5HE3` through
+`run-kMwULs`. Full report paths, per-task counts and exits are recorded in
+`target/pr17-ipc-large-fix/completed-replays.json`.
+
+Post-repair validation also passed: descriptor owner tests (206 unit, 57
+integration and 10 doctests), strict facade Ipc tests (4), WASM descriptor
+compilation, formatting, and the full ordinary workspace (10,570 passed,
+0 failed, 84 ignored). Logs are `/tmp/ck-ipc-large-*.log`.
 
 ## COSMolKit 0.5.1-rc.2 / RDKit 2026.09.1
 

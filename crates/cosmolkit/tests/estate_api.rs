@@ -69,15 +69,19 @@ fn signed_and_absolute_extrema_include_interior_atoms() {
     );
     let empty = Molecule::new();
     assert!(empty.estate_indices().unwrap().is_empty());
-    assert_eq!(
-        [
-            empty.max_estate_index().unwrap(),
-            empty.min_estate_index().unwrap(),
-            empty.max_abs_estate_index().unwrap(),
-            empty.min_abs_estate_index().unwrap()
-        ],
-        [0.0; 4]
-    );
+    for result in [
+        empty.max_estate_index(),
+        empty.min_estate_index(),
+        empty.max_abs_estate_index(),
+        empty.min_abs_estate_index(),
+    ] {
+        assert!(matches!(
+            result,
+            Err(DescriptorReadError::Algorithm {
+                source: DescriptorError::EmptyEStateIndices
+            })
+        ));
+    }
 }
 
 #[test]

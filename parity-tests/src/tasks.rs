@@ -29,7 +29,6 @@ pub fn available() -> Vec<(&'static str, &'static str)> {
     TASKS
         .iter()
         .chain(crate::descriptors::TASKS)
-        .chain(crate::descriptor_reference::TASKS)
         .chain(crate::chemistry::TASKS)
         .chain(crate::inchi::TASKS)
         .chain(crate::search_tautomer::TASKS)
@@ -238,6 +237,15 @@ pub(crate) fn failed_error(error: &(dyn std::error::Error + 'static)) -> Vec<u8>
                 ]),
             );
         }
+        if matches!(
+            inner.downcast_ref(),
+            Some(cosmolkit::DescriptorError::EmptyEStateIndices)
+        ) {
+            return outcome(
+                1,
+                Value::List(vec![Value::Text("EmptyEStateIndices".into())]),
+            );
+        }
         if let Some(cosmolkit::DescriptorError::UnsupportedBcutBond { .. }) = inner.downcast_ref() {
             return outcome(
                 1,
@@ -421,24 +429,29 @@ pub fn matching_error(task: &str, expected: &[u8], actual: &[u8]) -> bool {
         return false;
     };
     match task {
+        "estate_extrema" => {
+            native == "ValueError: min() iterable argument is empty"
+                && matches!(ck.as_slice(), [Value::Text(kind)] if kind == "EmptyEStateIndices")
+        }
         "bcut2d" | "gasteiger_charges" => match ck.as_slice() {
             [Value::Text(kind), Value::Text(element), Value::Text(mode)]
                 if kind == "GasteigerMissingParameters" =>
             {
                 native
                     == format!(
-                        "ERROR: No Gasteiger Partial Charge parameters for Element: {element} Mode: {mode}"
+                        "ValueError: ERROR: No Gasteiger Partial Charge parameters for Element: {element} Mode: {mode}"
                     )
             }
             [Value::Text(kind)] if task == "bcut2d" && kind == "UnsupportedBcutBond" => {
-                native == "Bond order must be Single, Double, Triple or Aromatic"
+                // RDKit's Python exception retains the invariant category and
+                // reason, followed by build-specific source/version diagnostics.
+                let mut lines = native.lines();
+                lines.next() == Some("RuntimeError: Invariant Violation")
+                    && lines.next()
+                        == Some("\tBond order must be Single, Double, Triple or Aromatic")
             }
             _ => false,
         },
-        "ipc" | "avg_ipc" => {
-            matches!(ck.as_slice(), [Value::Text(kind), Value::UInt(actual), Value::UInt(expected)]
-            if kind == "IpcMatrixDimension" && native == format!("distance matrix has {actual} rows; expected {expected}"))
-        }
         "decompose_brics" => {
             // BRICS.py::BRICSDecompose reads prod.pSmi from each accepted product,
             // including one whose failed sanitation skipped assignment of that attribute.

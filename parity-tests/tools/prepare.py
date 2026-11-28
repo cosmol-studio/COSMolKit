@@ -27,7 +27,6 @@ from search_tautomer import search,tautomer
 from geometry import TASKS as GEOMETRY_TASKS, geometry
 import bio
 import special
-import native_descriptors
 
 RDLogger.DisableLog("rdApp.*")
 MAX_FRAME = 128 * 1024 * 1024
@@ -190,11 +189,9 @@ def compress_frame(raw, count):
             + hashlib.sha256(compressed).digest() + compressed)
 
 
-def calculate(job: tuple[str, list[dict], list[str], str], executable: Path | None = None) -> tuple[int, str]:
+def calculate(job: tuple[str, list[dict], list[str], str]) -> tuple[int, str]:
     task, profiles, smiles, folder = job
-    if executable is not None:
-        outcomes = native_descriptors.iter_outcomes(executable, task, profiles, smiles, encode, MAX_FRAME * 3)
-    elif task in ("fingerprint_layered", "inchi_write", "inchi_key", "inchi_roundtrip"):
+    if task in ("fingerprint_layered", "inchi_write", "inchi_key", "inchi_roundtrip"):
         outcomes = isolated(evaluate_rows, task, profiles, smiles)
     else:
         outcomes = iter_outcomes(task, profiles, smiles)
@@ -236,15 +233,9 @@ def generate(pool, request, task):
     request = dict(request, **{key:task[key] for key in ("corpus", "offset", "limit")})
     identity, folder = task["identity"], Path(task["folder"])
     name, profiles = identity["task"], identity["profiles"]
-    executable = None
-    if "native_build" in identity or "executable" in task:
-        executable = Path(task["executable"])
-        native_descriptors.verify_build(executable, identity)
-        input_format = identity["input_format"]
-    else:
-        if identity["rdkit"] != request["rdkit"]:
-            raise ValueError("the installed wheel cannot generate a source-revision reference")
-        input_format = task["input_format"]
+    if identity["rdkit"] != request["rdkit"]:
+        raise ValueError("reference identity does not match the pinned RDKit Python version")
+    input_format = task["input_format"]
     if input_format not in ("smiles_token", "jsonl"):
         raise ValueError(f"unknown corpus format: {input_format}")
     structured = input_format == "jsonl"
@@ -263,9 +254,13 @@ def generate(pool, request, task):
                 encoded = text.encode("utf-8")
                 input_digest.update(struct.pack("<Q", len(encoded)))
                 input_digest.update(encoded)
-            if executable is not None and structured:
-                batch = [native_descriptors.smiles_input(line) for line in batch]
-            pending.append((len(batch), pool.submit(calculate, (name, profiles, batch, str(folder)), executable)))
+            if structured and name not in special.TASKS and name != "bio_pdb_output":
+                decoded = [json.loads(line) for line in batch]
+                if any(not isinstance(row, dict) or set(row) != {"smiles"}
+                       or not isinstance(row["smiles"], str) for row in decoded):
+                    raise ValueError('molecular JSONL input requires one "smiles" string')
+                batch = [row["smiles"] for row in decoded]
+            pending.append((len(batch), pool.submit(calculate, (name, profiles, batch, str(folder)))))
     for _ in range(request["threads"] * 2):
         submit()
     started, updated = time.monotonic(), 0.0

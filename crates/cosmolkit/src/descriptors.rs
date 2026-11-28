@@ -196,9 +196,8 @@ fn required_chi_input(
 impl Molecule {
     /// Total information content of the current binary molecular graph.
     ///
-    /// Reads topology only. A certified reconstruction whose total overflows
-    /// binary64 returns positive infinity; a graph beyond the pinned
-    /// reconstruction bound returns NaN.
+    /// Reads topology only and follows RDKit 2026.09.1's floating-point
+    /// characteristic-polynomial recurrence, including nonfinite results.
     #[cfg(feature = "cap-descriptors")]
     pub fn ipc(&self) -> Result<f64, cosmolkit_descriptors::IpcError> {
         cosmolkit_descriptors::ipc(self.topology())
@@ -206,9 +205,9 @@ impl Molecule {
 
     /// Total information content using a borrowed distance-matrix override.
     ///
-    /// Only entries equal to one in the lower triangle, including the
-    /// diagonal, supply edges or loops. The matrix dimension must equal the
-    /// current atom count.
+    /// Every entry equal to one supplies a directed adjacency entry;
+    /// a diagonal one supplies a loop. The square matrix dimension must
+    /// equal the current atom count.
     #[cfg(feature = "cap-descriptors")]
     pub fn ipc_with_distance_matrix(
         &self,
@@ -219,7 +218,7 @@ impl Molecule {
 
     /// Average information content of the current binary molecular graph.
     ///
-    /// Within the reconstruction bound it stays finite even if total Ipc overflows.
+    /// Floating-point polynomial overflow can make this result NaN.
     #[cfg(feature = "cap-descriptors")]
     pub fn avg_ipc(&self) -> Result<f64, cosmolkit_descriptors::IpcError> {
         cosmolkit_descriptors::avg_ipc(self.topology())

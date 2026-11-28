@@ -16,6 +16,23 @@ pub enum Value {
 }
 
 impl Value {
+    /// Compare corresponding NaNs equally while preserving every other bit and type.
+    pub fn equivalent(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Float(left), Self::Float(right)) => {
+                left == right || (f64::from_bits(*left).is_nan() && f64::from_bits(*right).is_nan())
+            }
+            (Self::List(left), Self::List(right)) => {
+                left.len() == right.len()
+                    && left
+                        .iter()
+                        .zip(right)
+                        .all(|(left, right)| left.equivalent(right))
+            }
+            _ => self == other,
+        }
+    }
+
     pub fn float(value: f64) -> Self {
         Self::Float(value.to_bits())
     }
@@ -134,7 +151,7 @@ pub fn decode(data: &[u8]) -> Result<Value> {
 mod tests {
     use super::*;
     #[test]
-    fn floating_comparison_preserves_every_bit() {
+    fn floating_encoding_preserves_every_bit() {
         assert_ne!(Value::float(0.0).encode(), Value::float(-0.0).encode());
         assert_ne!(
             Value::float(1.0).encode(),
@@ -144,6 +161,35 @@ mod tests {
             let value = Value::Float(bits);
             assert_eq!(decode(&value.encode()).unwrap(), value);
         }
+    }
+
+    #[test]
+    fn comparison_ignores_only_nan_representations() {
+        let nested =
+            |value| Value::List(vec![Value::Text("value".into()), Value::List(vec![value])]);
+        for bits in [
+            0x7ff0_0000_0000_0001,
+            0x7ff8_0000_0000_1234,
+            0xfff8_0000_0000_0000,
+        ] {
+            let nan = nested(Value::Float(bits));
+            assert!(nan.equivalent(&nested(Value::float(f64::NAN))));
+            assert!(!nan.equivalent(&nested(Value::float(f64::INFINITY))));
+            assert!(!nan.equivalent(&nested(Value::Text("nan".into()))));
+            assert!(!nan.equivalent(&Value::List(vec![Value::float(f64::NAN)])));
+        }
+        for (left, right) in [
+            (0.0_f64.to_bits(), (-0.0_f64).to_bits()),
+            (1.0_f64.to_bits(), 1.0_f64.to_bits() + 1),
+            (f64::INFINITY.to_bits(), f64::NEG_INFINITY.to_bits()),
+        ] {
+            assert!(!nested(Value::Float(left)).equivalent(&nested(Value::Float(right))));
+        }
+        // Identical bytes in an opaque field are not interpreted as floating point.
+        assert!(
+            !Value::Bytes(f64::NAN.to_le_bytes().to_vec())
+                .equivalent(&Value::Bytes((-f64::NAN).to_le_bytes().to_vec()))
+        );
     }
 
     #[test]

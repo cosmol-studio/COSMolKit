@@ -4,6 +4,16 @@ use cosmolkit::{Molecule, RotatableBondsOptions};
 use serde_json::{Value as Json, json};
 
 pub const TASKS: &[(&str, &str)] = &[
+    ("gasteiger_charges", "descriptors"),
+    ("partial_charge_extrema", "descriptors"),
+    ("peoe_vsa", "descriptors"),
+    ("estate_indices", "descriptors"),
+    ("estate_extrema", "descriptors"),
+    ("estate_vsa", "descriptors"),
+    ("vsa_estate", "descriptors"),
+    ("bcut2d", "descriptors"),
+    ("ipc", "descriptors"),
+    ("avg_ipc", "descriptors"),
     ("labute_asa_sequence", "descriptors"),
     ("slogp_vsa_sequence", "descriptors"),
     ("smr_vsa_sequence", "descriptors"),
@@ -75,7 +85,6 @@ pub fn profiles(task: &str) -> Result<Vec<Json>> {
             json!({"iterations":0,"strict":false}),
         ],
         "ipc" | "avg_ipc" => vec![json!({"distance_matrix":null})],
-        task if crate::descriptor_reference::kind(task).is_some() => vec![json!({})],
         "chi_0" | "chi_1" => vec![json!({"result_type":"f64"})],
         "molecular_weight" | "exact_molecular_weight" => {
             [false, true].map(|v| json!({"only_heavy":v})).into()

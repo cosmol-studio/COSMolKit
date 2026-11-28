@@ -7,7 +7,22 @@
 //! on every target, including WASM targets without a hardware FMA.
 
 pub(super) fn probability_ln(x: f64) -> f64 {
-    debug_assert!(x > 0.0 && x <= 1.0);
+    // musl✔️✔️: if (ix * 2 == 0)
+    // musl✔️✔️:     return __math_divzero(1);
+    // musl✔️✔️: if (ix == asuint64(INFINITY)) /* log(inf) == inf.  */
+    // musl✔️✔️:     return x;
+    // musl✔️✔️: if ((top & 0x8000) || top >= 0x7ff0)
+    // musl✔️✔️:     return __math_invalid(x);
+    if x == 0.0 {
+        return f64::NEG_INFINITY;
+    }
+    if x == f64::INFINITY {
+        return x;
+    }
+    if x.is_nan() || x < 0.0 {
+        let invalid = x - x;
+        return invalid / invalid;
+    }
     // musl✔️✔️: #define LO asuint64(1.0 - 0x1p-4)
     // musl✔️✔️: if (predict_false(ix - LO < HI - LO)) {
     if x >= 1.0 - 1.0 / 16.0 {

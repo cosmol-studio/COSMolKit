@@ -2,8 +2,8 @@
 
 Prepare references once, then compare COSMolKit through Cargo. Run from the
 repository root with the development `.venv` installed (RDKit **2026.09.1**
-and Gemmi **0.7.5** for BIO). The default `full` selection also requires the
-[two source-built descriptor references](#build-the-descriptor-references).
+and Gemmi **0.7.5** for BIO). All descriptor references come from this same
+RDKit Python environment.
 
 ```bash
 cargo run -p cosmolkit-parity-tests --profile dev-test --features cosmolkit/op-contracts-strict -- prepare --corpus smiles_small --threads 32
@@ -47,34 +47,6 @@ for example `{"valence":[{"recalculate":true}]}`. Default matrices remain
 explicit in the corresponding Rust task module. Random sampling adds profiles
 to those matrices; fixed special-regression recipes are not randomized.
 
-## Build the descriptor references
-
-`descriptor-foundations` uses a pinned RDKit build with Eigen. `descriptor-foundations-ipc`
-uses a different RDKit revision with exact characteristic-polynomial coefficients. On Linux,
-check out the two [pinned commits](../testdata/reference/descriptor_foundations.json) in separate,
-clean RDKit trees. The build needs a C++20 compiler, CMake, Ninja, jq, Boost 1.81 or later
-(JSON, serialization and iostreams) and Eigen 3.4.0. The builder fetches the pinned commit
-from each checkout into a temporary source tree under the build directory. Keep build and
-output directories outside the supplied checkouts:
-
-```bash
-bash parity-tests/tools/descriptor_reference/build.sh master /path/to/rdkit-master target/oracles/master parity-tests/expected/descriptor-oracles
-bash parity-tests/tools/descriptor_reference/build.sh exact-ipc /path/to/rdkit-exact-ipc target/oracles/ipc parity-tests/expected/descriptor-oracles
-```
-
-Set `COSMOLKIT_DESCRIPTOR_ORACLES` if you use a different output directory. Preparing new
-references checks the executable's checksum and build identity. Comparing cached results needs
-only the identity file and matching cache. Descriptor cache keys distinguish SMILES tokens
-from JSONL records, even for identical input bytes. BCUT2D's [per-eigenvalue comparison](../dev/test_boundaries.md#corpus-tests)
-preserves the raw reference bits.
-
-The exact-Ipc reference uses round-to-nearest binary64, the x86-64 glibc FMA
-implementation of `log` (verified on glibc 2.35), and an uncontracted RDKit
-entropy sum. At startup it checks the near-one and table-reduction logarithm
-branches and the entropy of propane. These inputs distinguish the tested
-profiles; they do not certify arbitrary math libraries. Generate new references
-on a matching host without substituting a different `libm`.
-
 ## Inputs and results
 
 The `r_brics` suite uses the regular rules from [BiomedSciAI/r-BRICS at
@@ -99,9 +71,10 @@ directory; an explicit path accepts any SMILES file. Blank/comment lines are
 ignored; the first whitespace-delimited field is the SMILES. Offsets and limits
 count input records, not physical lines.
 
-The two descriptor-foundation suites also accept JSONL records such as `{"smiles":""}` to
-include an empty molecule. The bundled `testdata/corpora/descriptor_foundations.jsonl` includes
-both orders of a disconnected molecule with NaN charge eigenvalues.
+Molecular JSONL inputs may use explicit records such as `{"smiles":""}` to
+retain an empty molecule. The bundled `testdata/corpora/descriptor_foundations.jsonl`
+retains the descriptor boundary inputs. Select the ordinary descriptor tasks
+with the same prepare and Cargo comparison commands as other molecular inputs.
 
 BIO and the special groups use their complete bundled JSONL construction
 recipes under `testdata/bio/` and `testdata/special/`. They run independently of
@@ -130,8 +103,10 @@ first differing byte; large payloads retain hashes and bounded byte windows.
 The reference file retains the complete expected result for reproduction.
 
 Numeric fields are compared by their exact encoded IEEE bits, including
-coordinates, energies, gradients and alignment matrices. The eight final BCUT2D
-eigenvalues use the [BCUT-specific comparison](../dev/test_boundaries.md#corpus-tests).
+coordinates, energies, gradients, alignment matrices and BCUT2D eigenvalues.
+Corresponding NaNs match regardless of sign, payload or quiet/signaling bits.
+All other values remain bit-exact, including signed zero and infinities;
+a NaN never matches a non-NaN. Stored reference bits are unchanged.
 Exception wrapping may differ only
 for explicitly paired native diagnostics and concrete Rust error kinds.
 Declared representation projections (such as MACCS's unused zero bit and

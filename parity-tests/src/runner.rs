@@ -37,10 +37,6 @@ pub fn main() -> Result<()> {
     };
     let mut selection = Vec::new();
     let mut inputs = std::collections::HashMap::new();
-    let oracle_root = std::env::var_os("COSMOLKIT_DESCRIPTOR_ORACLES")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| root.join("expected/descriptor-oracles"));
-    let mut native_builds = std::collections::HashMap::new();
     for task in selected {
         let mut input_options = options.clone();
         if let Some(path) = tasks::fixed_input(task) {
@@ -78,21 +74,8 @@ pub fn main() -> Result<()> {
             options.random_profiles,
             options.seed,
         )?);
-        let native_build = if let Some(kind) = crate::descriptor_reference::kind(task) {
-            if !native_builds.contains_key(kind) {
-                native_builds.insert(
-                    kind,
-                    crate::descriptor_reference::NativeBuild::load(&oracle_root, kind)?,
-                );
-            }
-            Some(native_builds[kind].clone())
-        } else {
-            None
-        };
         let identity = Identity {
-            reference_contract: if native_build.is_some() {
-                Some("native-descriptor-binary64-v1".into())
-            } else if matches!(
+            reference_contract: if matches!(
                 task,
                 "decompose_r_brics" | "find_r_brics_bonds" | "r_brics_cut_graph"
             ) {
@@ -105,12 +88,10 @@ pub fn main() -> Result<()> {
                     .any(|(name, _)| *name == task)
                     .then(|| "inchi-generation-status-v1".into())
             },
-            rdkit: native_build
-                .as_ref()
-                .map_or(tasks::RDKIT, |build| build.revision())
-                .into(),
-            input_format: native_build.as_ref().map(|_| corpus.format),
-            native_build,
+            rdkit: tasks::RDKIT.into(),
+            input_format: (corpus.format == crate::corpus::InputFormat::Jsonl
+                && tasks::fixed_input(task).is_none())
+            .then_some(corpus.format),
             task: task.into(),
             profiles: json!(profiles),
             input_sha256: corpus.sha256.clone(),
@@ -128,11 +109,7 @@ pub fn main() -> Result<()> {
                     println!("{}: prepare ({error})", identity.task);
                     let mut job = json!({"identity": identity, "folder": folder,
                         "corpus":corpus.path,"offset":corpus.offset,"limit":corpus.limit});
-                    if let Some(build) = &identity.native_build {
-                        job["executable"] = json!(build.executable(&oracle_root));
-                    } else {
-                        job["input_format"] = json!(corpus.format);
-                    }
+                    job["input_format"] = json!(corpus.format);
                     missing.push(job);
                 }
             }
@@ -238,19 +215,18 @@ pub fn main() -> Result<()> {
                 input_digest.update((input.len() as u64).to_le_bytes());
                 input_digest.update(input.as_bytes());
             }
+            let smiles;
+            let task_inputs = if identity.input_format == Some(crate::corpus::InputFormat::Jsonl) {
+                smiles = crate::corpus::smiles_inputs(&inputs)?;
+                &smiles
+            } else {
+                &inputs
+            };
             let actual = if identity.task == "tetrahedral_geometry" {
                 crate::tetrahedral_geometry::evaluate(&inputs, &expected_rows, &pool)?
             } else if let Some(prepared) = &prepared_search {
-                prepared.evaluate(&inputs, &pool)
+                prepared.evaluate(task_inputs, &pool)
             } else {
-                let smiles;
-                let task_inputs =
-                    if identity.input_format == Some(crate::corpus::InputFormat::Jsonl) {
-                        smiles = crate::descriptor_reference::smiles_inputs(&inputs)?;
-                        &smiles
-                    } else {
-                        &inputs
-                    };
                 tasks::evaluate(
                     &identity.task,
                     &profiles,
@@ -273,7 +249,11 @@ pub fn main() -> Result<()> {
                 let expected = tasks::unpack_row(&expected, profiles.len())?;
                 for (profile, (expected, actual)) in expected.into_iter().zip(actual).enumerate() {
                     let status = expected[0];
-                    let same = status <= 1 && matches_outcome(&identity.task, expected, &actual);
+                    let same = status <= 1
+                        && (expected == actual
+                            || (actual.first() == Some(&status)
+                                && value::decode(&expected[1..])?
+                                    .equivalent(&value::decode(&actual[1..])?)));
                     let matching_error = tasks::matching_error(&identity.task, expected, &actual);
                     let (reference_timeout, actual_timeout) =
                         timeout_flags(&identity.task, expected, &actual);
@@ -372,33 +352,6 @@ pub fn main() -> Result<()> {
     Ok(())
 }
 
-fn matches_outcome(task: &str, reference: &[u8], actual: &[u8]) -> bool {
-    use value::Value;
-    if task != "bcut2d" || reference.first() != Some(&0) {
-        return reference == actual;
-    }
-    let Some(actual) = actual.strip_prefix(&[0]) else {
-        return false;
-    };
-    let (Ok(Value::List(expected)), Ok(Value::List(observed))) =
-        (value::decode(&reference[1..]), value::decode(actual))
-    else {
-        return false;
-    };
-
-    expected.len() == 8
-        && observed.len() == 8
-        && expected.iter().zip(&observed).all(|(r, a)| {
-            let (Value::Float(r), Value::Float(a)) = (r, a) else {
-                return false;
-            };
-            let (x, y) = (f64::from_bits(*r), f64::from_bits(*a));
-            r == a
-                || (x.is_nan() && y.is_nan() && r ^ a == 1 << 63)
-                || (x.is_finite() && y.is_finite() && (y - x).abs() <= 1e-12 * x.abs().max(1.0))
-        })
-}
-
 fn timeout_flags(task: &str, expected: &[u8], actual: &[u8]) -> (bool, bool) {
     let timed_out = |bytes: &[u8]| {
         bytes.first() == Some(&3) || (task == "embedding" && embedding_timed_out(bytes))
@@ -437,63 +390,6 @@ fn profile_path(root: &Path, path: &Path) -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn only_standard_bcut_slots_allow_rounding_and_nan_sign_changes() {
-        use value::Value;
-        let vector = |slots: &[u64]| {
-            tasks::success(Value::List(
-                slots.iter().copied().map(Value::Float).collect(),
-            ))
-        };
-        let expected = [
-            0x7ff8_0000_0000_1234,
-            1.0f64.to_bits(),
-            f64::INFINITY.to_bits(),
-            0,
-            0,
-            0,
-            0,
-            0,
-        ];
-        let mut observed = expected;
-        observed[1] += 1;
-        observed[0] ^= 1 << 63;
-        let reference = vector(&expected);
-        let actual = vector(&observed);
-        assert!(matches_outcome("bcut2d", &reference, &actual));
-        assert!(!matches_outcome("gasteiger_charges", &reference, &actual));
-
-        let mut signaling = expected;
-        signaling[0] ^= 1 << 51;
-        let mut negative = signaling;
-        negative[0] ^= 1 << 63;
-        assert!(matches_outcome(
-            "bcut2d",
-            &vector(&signaling),
-            &vector(&negative)
-        ));
-
-        for (slot, bits) in [
-            (0, observed[0] ^ 1),
-            (0, observed[0] ^ (1 << 51)),
-            (0, 0),
-            (1, expected[0]),
-            (1, 1.001f64.to_bits()),
-            (2, f64::NEG_INFINITY.to_bits()),
-        ] {
-            let mut wrong = observed;
-            wrong[slot] = bits;
-            assert!(!matches_outcome("bcut2d", &reference, &vector(&wrong)));
-        }
-        let short = vector(&observed[..7]);
-        assert!(!matches_outcome("bcut2d", &short, &short));
-        let nulls = tasks::success(Value::List(vec![Value::Null; 8]));
-        assert!(!matches_outcome("bcut2d", &nulls, &nulls));
-        let rejected = tasks::outcome(1, Value::Text("parse_rejected".into()));
-        assert!(!matches_outcome("bcut2d", &reference, &rejected));
-        assert!(matches_outcome("bcut2d", &rejected, &rejected));
-    }
 
     #[test]
     fn timeouts_are_separate_even_when_both_results_match() {

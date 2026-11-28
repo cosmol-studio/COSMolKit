@@ -70,11 +70,10 @@ Verify compressed-frame and final-file checksums during the streaming comparison
 Missing, corrupt or stale references fail explicitly, never by regenerating data
 during comparison. Tasks run serially; cases within each task use the selected
 Rayon pool or equivalent public batch API. Numeric outputs compare by exact
-IEEE bits except for the eight final `bcut2d` eigenvalues. Compare finite
-BCUT2D values with `abs(actual - reference) <= 1e-12 * max(1, abs(reference))`.
-For two NaNs at the same position, ignore only the sign bit; the payload and
-quiet/signaling bit must match. Infinities must match including sign. Keep all
-eight slots and the raw reference bits; no exception applies to another task.
+IEEE bits, including BCUT2D eigenvalues. Corresponding floating-point NaNs
+match regardless of sign, payload or quiet/signaling representation. A NaN
+does not match a non-NaN; all other values remain bit-exact, including signed
+zero and infinities. The encoded reference data retain their original bits.
 Do not drop inputs or widen comparisons to hide a mismatch.
 Matching source-defined errors is checked under each task's explicit error
 contract, not silently counted as a successful numerical calculation.

@@ -3,11 +3,11 @@
 //! The matrix and eigensolver are private implementation details. The caller
 //! supplies the four source-ordered property rows after preparing the graph.
 
+use super::eigen::{Workspace as SymmetricEigenWorkspace, extrema as symmetric_eigen_extrema};
 use crate::DescriptorError;
 use cosmolkit_model::{BondOrder, TopologyBlock};
 
 const NONBONDED_WEIGHT: f64 = 0.001;
-const MAX_QR_ITERATIONS: usize = 30;
 
 /// Calculate the four standard BCUT2D high/low eigenvalue pairs.
 ///
@@ -64,7 +64,7 @@ struct BurdenMatrix {
 
 impl BurdenMatrix {
     fn new(topology: &TopologyBlock) -> Result<Self, DescriptorError> {
-        // RDKit 4ce8a0636f9b8ef28d6c3f4af4f502392c997d6b:
+        // RDKit 2026.09.1:
         // Code/GraphMol/Descriptors/BCUT.cpp
         // RDKit❗❗: std::unique_ptr<Eigen::MatrixXd> make_burden(const ROMol &m) {
         // RDKit❗❗:   auto num_atoms = m.getNumAtoms();
@@ -139,7 +139,10 @@ fn bond_weight(order: BondOrder) -> Option<f64> {
     }
 }
 
-fn allocate_dense_values(dimension: usize, fill: f64) -> Result<Vec<f64>, DescriptorError> {
+pub(super) fn allocate_dense_values(
+    dimension: usize,
+    fill: f64,
+) -> Result<Vec<f64>, DescriptorError> {
     let len = dimension
         .checked_mul(dimension)
         .ok_or(DescriptorError::CountOverflow {
@@ -154,261 +157,13 @@ fn allocate_dense_values(dimension: usize, fill: f64) -> Result<Vec<f64>, Descri
     Ok(values)
 }
 
-fn allocate_vector(length: usize) -> Result<Vec<f64>, DescriptorError> {
+pub(super) fn allocate_vector(length: usize) -> Result<Vec<f64>, DescriptorError> {
     let mut values = Vec::new();
     values
         .try_reserve_exact(length)
         .map_err(|_| DescriptorError::BcutMatrixAllocation { dimension: length })?;
     values.resize(length, 0.0);
     Ok(values)
-}
-
-struct SymmetricEigenWorkspace {
-    dimension: usize,
-    matrix: Vec<f64>,
-    diagonal: Vec<f64>,
-    off_diagonal: Vec<f64>,
-    reflector: Vec<f64>,
-    update: Vec<f64>,
-}
-
-impl SymmetricEigenWorkspace {
-    fn new(dimension: usize) -> Result<Self, DescriptorError> {
-        Ok(Self {
-            dimension,
-            matrix: allocate_dense_values(dimension, 0.0)?,
-            diagonal: allocate_vector(dimension)?,
-            off_diagonal: allocate_vector(dimension)?,
-            reflector: allocate_vector(dimension)?,
-            update: allocate_vector(dimension)?,
-        })
-    }
-}
-
-fn symmetric_eigen_extrema(
-    matrix: &[f64],
-    workspace: &mut SymmetricEigenWorkspace,
-) -> Result<(f64, f64), DescriptorError> {
-    // RDKit❗❗: std::pair<double, double> BCUT2D(std::unique_ptr<Eigen::MatrixXd> &burden,
-    // RDKit❗❗:                                  const std::vector<double> &atom_props) {
-    // RDKit❗❗:   if (atom_props.empty()) {
-    // RDKit❗❗:     return std::pair<double, double>(0.0, 0.0);
-    // RDKit❗❗:   }
-    // RDKit❗❗:   for (unsigned int i = 0; i < atom_props.size(); ++i) {
-    // RDKit❗❗:     (*burden)(i, i) = atom_props[i];
-    // RDKit❗❗:   }
-    // RDKit❗❗:   Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(*burden);
-    // RDKit❗❗:   auto eivals = es.eigenvalues();
-    // RDKit❗❗:   double lowest = eivals(0);
-    // RDKit❗❗:   double highest = eivals(atom_props.size() - 1);
-    // RDKit❗❗:   return std::pair<double, double>(highest, lowest);
-    // RDKit❗❗: }
-    let dimension = workspace.dimension;
-    if dimension == 0 {
-        return Ok((0.0, 0.0));
-    }
-
-    if dimension == 1 {
-        return Ok((matrix[0], matrix[0]));
-    }
-
-    // For a larger Burden matrix, an infinite or NaN atomic charge makes
-    // both extrema of this weighting undefined. All off-diagonals are finite.
-    let diagonal = matrix.iter().step_by(dimension + 1);
-    if diagonal.clone().any(|x| !x.is_finite()) {
-        let nan = diagonal.copied().find(|x| x.is_nan()).unwrap_or(f64::NAN);
-        return Ok((nan, nan));
-    }
-
-    workspace.matrix.copy_from_slice(matrix);
-    householder_tridiagonalize(workspace);
-    implicit_qr_diagonalize(workspace)?;
-    Ok(diagonal_extrema(&workspace.diagonal))
-}
-
-fn householder_tridiagonalize(workspace: &mut SymmetricEigenWorkspace) {
-    // Each symmetric Householder similarity eliminates the entries below one
-    // subdiagonal. The resulting diagonal and subdiagonal form the input to QR.
-    let dimension = workspace.dimension;
-    for column in 0..dimension.saturating_sub(2) {
-        let tail_start = column + 1;
-        let tail_len = dimension - tail_start;
-        let mut squared_norm = 0.0;
-        for offset in 0..tail_len {
-            let value = workspace.matrix[(tail_start + offset) * dimension + column];
-            workspace.reflector[offset] = value;
-            squared_norm += value * value;
-        }
-
-        let norm = squared_norm.sqrt();
-        if norm == 0.0 {
-            continue;
-        }
-
-        let first = workspace.reflector[0];
-        let alpha = if first >= 0.0 { -norm } else { norm };
-        workspace.reflector[0] = first - alpha;
-
-        let mut reflector_norm = 0.0;
-        for offset in 0..tail_len {
-            let value = workspace.reflector[offset];
-            reflector_norm += value * value;
-        }
-        let beta = 2.0 / reflector_norm;
-
-        for row in 0..tail_len {
-            let mut product = 0.0;
-            for column_offset in 0..tail_len {
-                product += workspace.matrix
-                    [(tail_start + row) * dimension + tail_start + column_offset]
-                    * workspace.reflector[column_offset];
-            }
-            workspace.update[row] = beta * product;
-        }
-
-        let mut correction = 0.0;
-        for offset in 0..tail_len {
-            correction += workspace.reflector[offset] * workspace.update[offset];
-        }
-        correction *= -0.5 * beta;
-        for offset in 0..tail_len {
-            workspace.update[offset] += correction * workspace.reflector[offset];
-        }
-
-        for row in 0..tail_len {
-            for column_offset in row..tail_len {
-                let row_index = tail_start + row;
-                let column_index = tail_start + column_offset;
-                let value = workspace.matrix[row_index * dimension + column_index]
-                    - workspace.reflector[row] * workspace.update[column_offset]
-                    - workspace.update[row] * workspace.reflector[column_offset];
-                workspace.matrix[row_index * dimension + column_index] = value;
-                workspace.matrix[column_index * dimension + row_index] = value;
-            }
-        }
-
-        workspace.matrix[tail_start * dimension + column] = alpha;
-        workspace.matrix[column * dimension + tail_start] = alpha;
-        for row in tail_start + 1..dimension {
-            workspace.matrix[row * dimension + column] = 0.0;
-            workspace.matrix[column * dimension + row] = 0.0;
-        }
-    }
-
-    for index in 0..dimension {
-        workspace.diagonal[index] = workspace.matrix[index * dimension + index];
-        workspace.off_diagonal[index] = if index + 1 < dimension {
-            workspace.matrix[index * dimension + index + 1]
-        } else {
-            0.0
-        };
-    }
-}
-
-fn implicit_qr_diagonalize(workspace: &mut SymmetricEigenWorkspace) -> Result<(), DescriptorError> {
-    let dimension = workspace.dimension;
-    for left in 0..dimension {
-        let mut iterations = 0;
-        let mut previous_right = dimension;
-        loop {
-            let mut right = left;
-            while right + 1 < dimension {
-                let threshold = f64::EPSILON
-                    * (workspace.diagonal[right].abs() + workspace.diagonal[right + 1].abs());
-                if workspace.off_diagonal[right].abs() <= threshold {
-                    workspace.off_diagonal[right] = 0.0;
-                    break;
-                }
-                right += 1;
-            }
-
-            if right == left {
-                break;
-            }
-            // The cap bounds QR steps without deflation, not steps already
-            // spent separating a different eigenvalue of this block.
-            if right != previous_right {
-                iterations = 0;
-                previous_right = right;
-            }
-            if iterations == MAX_QR_ITERATIONS {
-                return Err(DescriptorError::BcutNonConvergence { dimension });
-            }
-            iterations += 1;
-
-            let shift = wilkinson_shift(
-                workspace.diagonal[right - 1],
-                workspace.diagonal[right],
-                workspace.off_diagonal[right - 1],
-            );
-            qr_step(workspace, left, right, shift);
-        }
-    }
-
-    Ok(())
-}
-
-fn wilkinson_shift(previous: f64, last: f64, connecting: f64) -> f64 {
-    let difference = 0.5 * (previous - last);
-    let denominator = difference.abs() + difference.hypot(connecting);
-    let sign = if difference >= 0.0 { 1.0 } else { -1.0 };
-    last - sign * connecting * (connecting / denominator)
-}
-
-fn qr_step(workspace: &mut SymmetricEigenWorkspace, left: usize, right: usize, shift: f64) {
-    let mut bulge = 0.0;
-    for index in left..right {
-        let (x, z) = if index == left {
-            (
-                workspace.diagonal[index] - shift,
-                workspace.off_diagonal[index],
-            )
-        } else {
-            (workspace.off_diagonal[index - 1], bulge)
-        };
-        let radius = x.hypot(z);
-        let (cosine, sine) = if radius == 0.0 {
-            (1.0, 0.0)
-        } else {
-            (x / radius, z / radius)
-        };
-
-        if index > left {
-            workspace.off_diagonal[index - 1] = radius;
-        }
-
-        let first_diagonal = workspace.diagonal[index];
-        let second_diagonal = workspace.diagonal[index + 1];
-        let coupling = workspace.off_diagonal[index];
-        workspace.diagonal[index] = cosine * cosine * first_diagonal
-            + 2.0 * cosine * sine * coupling
-            + sine * sine * second_diagonal;
-        workspace.diagonal[index + 1] = sine * sine * first_diagonal
-            - 2.0 * cosine * sine * coupling
-            + cosine * cosine * second_diagonal;
-        workspace.off_diagonal[index] = (cosine * cosine - sine * sine) * coupling
-            + cosine * sine * (second_diagonal - first_diagonal);
-
-        if index + 1 < right {
-            let next_coupling = workspace.off_diagonal[index + 1];
-            bulge = sine * next_coupling;
-            workspace.off_diagonal[index + 1] = cosine * next_coupling;
-        }
-    }
-}
-
-fn diagonal_extrema(diagonal: &[f64]) -> (f64, f64) {
-    let mut lowest = diagonal[0];
-    let mut highest = diagonal[0];
-    for &value in &diagonal[1..] {
-        if value.total_cmp(&lowest).is_lt() {
-            lowest = value;
-        }
-        if value.total_cmp(&highest).is_gt() {
-            highest = value;
-        }
-    }
-    (highest, lowest)
 }
 
 #[cfg(test)]
@@ -472,6 +227,28 @@ mod tests {
             (actual - expected).abs() <= tolerance,
             "{actual:?} differs from {expected:?} by more than {tolerance:?}"
         );
+    }
+
+    #[test]
+    fn eigen_scaling_householder_and_qr_follow_the_fixed_source_path() {
+        // Eigen 3.3.4 MatrixXd / Lower / Packet2d, default solver options.
+        // The same matrix is the mass-weighted Burden matrix of CCO.
+        let matrix = [12.011, 1.0, 0.001, 1.0, 12.011, 1.0, 0.001, 1.0, 15.999];
+        let mut workspace = SymmetricEigenWorkspace::new(3).unwrap();
+        let (high, low) = symmetric_eigen_extrema(&matrix, &mut workspace).unwrap();
+        assert_eq!(high.to_bits(), 0x4030_3fbd_e550_7372);
+        assert_eq!(low.to_bits(), 0x4025_d0fb_6693_efe5);
+        // A five-cycle distinguishes the Eigen 3.3.4 QR deflation from 3.4.
+        let mut matrix = vec![NONBONDED_WEIGHT; 25];
+        for i in 0..5 {
+            matrix[i * 5 + i] = 12.011;
+            matrix[i * 5 + (i + 1) % 5] = 1.0;
+            matrix[((i + 1) % 5) * 5 + i] = 1.0;
+        }
+        let mut workspace = SymmetricEigenWorkspace::new(5).unwrap();
+        let (high, low) = symmetric_eigen_extrema(&matrix, &mut workspace).unwrap();
+        assert_eq!(high.to_bits(), 0x402c_06a7_ef9d_b22e);
+        assert_eq!(low.to_bits(), 0x4024_c983_d915_0e79);
     }
 
     #[test]

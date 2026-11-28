@@ -56,19 +56,16 @@ fn default_graph_uses_all_vertices_and_needs_no_preparation() {
 
 #[cfg(feature = "descriptors")]
 #[test]
-fn long_path_information_matches_its_independent_polynomial() {
-    let mol = Molecule::from_smiles(&"C".repeat(120)).unwrap();
-    // The nonzero coefficient magnitudes are binomial(120-k, k). Normalizing
-    // those integers gives AvgIpc as Shannon entropy and Ipc as entropy times their sum.
-    for (actual, expected) in [
-        (mol.ipc().unwrap(), 3.259_288_638_433_213_3e25),
-        (mol.avg_ipc().unwrap(), 3.759_268_578_010_805),
-    ] {
-        assert!(
-            (actual - expected).abs() <= 1e-15 * expected,
-            "{actual} vs {expected}"
-        );
-    }
+fn path_information_uses_the_released_float_polynomial() {
+    let mol = Molecule::from_smiles("CCCC").unwrap();
+    assert_eq!(
+        mol.ipc().unwrap().to_bits(),
+        6.854752972273345_f64.to_bits()
+    );
+    assert_eq!(
+        mol.avg_ipc().unwrap().to_bits(),
+        1.370950594454669_f64.to_bits()
+    );
 }
 
 #[cfg(feature = "descriptors")]
@@ -94,7 +91,7 @@ fn borrowed_matrices_replace_the_current_graph_without_changing_it() {
     );
     assert_eq!(
         score([vec![0.0, f64::NAN], vec![1.0, 0.0]].as_slice().into()),
-        (2.0, 1.0)
+        (0.0, 0.0)
     );
     assert_eq!(score((&other).into()), (0.0, 0.0));
     assert_eq!(mol.ipc().unwrap(), 2.0);

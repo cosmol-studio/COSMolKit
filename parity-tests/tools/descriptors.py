@@ -1,5 +1,6 @@
 """Direct pinned RDKit descriptor calls; all floating bits remain intact."""
-from rdkit.Chem import rdMolDescriptors as D, QED
+from rdkit.Chem import rdMolDescriptors as D, QED, Descriptors, GraphDescriptors, rdPartialCharges
+from rdkit.Chem.EState import EState, EState_VSA
 
 COUNTS = {
     "num_heavy_atoms": D.CalcNumHeavyAtoms, "total_atom_count": D.CalcNumAtoms,
@@ -25,6 +26,26 @@ SCALARS = {"chi_0":D.CalcChi0n, "chi_1":D.CalcChi1n,
            "qed":QED.qed}
 
 def descriptor(mol, task, p):
+    if task == "gasteiger_charges":
+        rdPartialCharges.ComputeGasteigerCharges(mol, nIter=p["iterations"],
+                                                throwOnParamFailure=p["strict"])
+        return [[atom.GetDoubleProp("_GasteigerCharge"),
+                 atom.GetDoubleProp("_GasteigerHCharge")] for atom in mol.GetAtoms()]
+    if task == "partial_charge_extrema":
+        return [Descriptors.MinPartialCharge(mol), Descriptors.MaxPartialCharge(mol),
+                Descriptors.MinAbsPartialCharge(mol), Descriptors.MaxAbsPartialCharge(mol)]
+    if task == "estate_extrema":
+        return [Descriptors.MinEStateIndex(mol), Descriptors.MaxEStateIndex(mol),
+                Descriptors.MinAbsEStateIndex(mol), Descriptors.MaxAbsEStateIndex(mol)]
+    if task == "estate_indices": return list(EState.EStateIndices(mol))
+    if task == "estate_vsa": return list(EState_VSA.EState_VSA_(mol))
+    if task == "vsa_estate": return list(EState_VSA.VSA_EState_(mol))
+    if task == "peoe_vsa": return D.PEOE_VSA_(mol)
+    if task == "bcut2d": return D.BCUT2D(mol)
+    if task in ("ipc", "avg_ipc"):
+        import numpy
+        matrix = None if p["distance_matrix"] is None else numpy.asarray(p["distance_matrix"], dtype=float)
+        return float(GraphDescriptors.Ipc(mol, avg=task == "avg_ipc", dMat=matrix))
     if task == "labute_asa_sequence":
         return [D.CalcLabuteASA(mol,include,force) for include,force in p["calls"]]
     if task in ("slogp_vsa_sequence","smr_vsa_sequence"):

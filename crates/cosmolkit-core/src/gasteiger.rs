@@ -376,6 +376,7 @@ fn atom_mode(topology: &TopologyBlock, atom_index: usize) -> &'static str {
 
 fn split_conjugated_formal_charges(topology: &TopologyBlock, charges: &mut [f64]) {
     // RDKit source (GasteigerCharges.cpp, splitChargeConjugated):
+    // RDKit❗✔️:   INT_VECT marker;
     // RDKit❗✔️: for (const auto at : mol.atoms()) {
     // RDKit❗✔️:   auto aix = at->getIdx();
     // RDKit❗✔️:   double formal = at->getFormalCharge();
@@ -405,13 +406,15 @@ fn split_conjugated_formal_charges(topology: &TopologyBlock, charges: &mut [f64]
     // RDKit❗✔️:     }
     // RDKit❗✔️:   }
     // RDKit❗✔️: }
+    let mut marker = Vec::new();
     for (atom_index, atom) in topology.atoms.iter().enumerate() {
         let mut formal_charge = f64::from(atom.formal_charge());
         if !(formal_charge.abs() > f64::EPSILON && charges[atom_index].abs() < f64::EPSILON) {
             continue;
         }
 
-        let mut marker = vec![atom_index];
+        marker.clear();
+        marker.push(atom_index);
         for first_neighbor in topology.adjacency.neighbors_of(atom_index) {
             let first_bond = &topology.bonds[first_neighbor.bond.index()];
             if !first_bond.is_conjugated() {
@@ -437,7 +440,7 @@ fn split_conjugated_formal_charges(topology: &TopologyBlock, charges: &mut [f64]
         }
 
         let distributed_charge = formal_charge / marker.len() as f64;
-        for marker_index in marker {
+        for &marker_index in &marker {
             charges[marker_index] = distributed_charge;
         }
     }
@@ -633,11 +636,18 @@ mod tests {
                 AtomSpec::new(Element::C),
                 AtomSpec::new(Element::O),
                 AtomSpec::new(Element::O).with_formal_charge(-1),
+                AtomSpec::new(Element::C),
+                AtomSpec::new(Element::C),
+                AtomSpec::new(Element::O),
+                AtomSpec::new(Element::O).with_formal_charge(1),
             ],
             vec![
                 bond(0, 1, BondOrder::Single, true),
                 bond(1, 2, BondOrder::Double, true),
                 bond(1, 3, BondOrder::Single, true),
+                bond(4, 5, BondOrder::Single, true),
+                bond(5, 6, BondOrder::Double, true),
+                bond(5, 7, BondOrder::Single, true),
             ],
         );
         let result = charges(&graph, None, 0);
@@ -646,7 +656,7 @@ mod tests {
                 .iter()
                 .map(GasteigerCharge::atom_charge)
                 .collect::<Vec<_>>(),
-            [0.0, 0.0, -0.5, -0.5]
+            [0.0, 0.0, -0.5, -0.5, 0.0, 0.0, 0.5, 0.5]
         );
         assert!(
             result

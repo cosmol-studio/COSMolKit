@@ -1,5 +1,5 @@
 //! Gasteiger charge summaries and charge-classified Labute surface areas.
-//! RDKit MiscDescriptors.cpp: Copyright (C) 2026 Glysade LLC and other RDKit contributors.
+//! RDKit Descriptors.py charge extrema and MolSurf.cpp surface-area projections.
 //! MolSurf.cpp: Copyright (C) 2007-2023 Greg Landrum. See LICENSE for BSD terms.
 
 use cosmolkit_core::{
@@ -26,52 +26,29 @@ impl PartialChargeExtrema {
         topology: &TopologyBlock,
         valence: Option<&ValenceAssignment>,
     ) -> DescriptorResult<Self> {
-        // RDKit❗✔️: PartialCharges calcPartialCharges(const ROMol &mol) {
-        // RDKit❗✔️:   if(mol.getNumAtoms() == 0) {
-        // RDKit❗✔️:     return {{}, -500, 500, 500, 500};
-        // RDKit❗✔️:   }
-        if topology.atoms.is_empty() {
-            return Ok(Self {
-                minimum: 500.0,
-                maximum: -500.0,
-                minimum_absolute: 500.0,
-                maximum_absolute: 500.0,
-            });
-        }
-
-        // RDKit❗✔️:   PartialCharges charges { {}, -500, 500, 500, 500 };
-        // RDKit❗✔️:   std::vector<double> chgs(mol.getNumAtoms(), 0.0);
-        // RDKit❗✔️:   computeGasteigerCharges(mol, chgs);
-        // RDKit❗✔️:   for (auto chg : chgs) {
-        // RDKit❗✔️:     if(!std::isnan(chg)) { // retain nans
-        // RDKit❗✔️:       charges.minPartialCharge = std::min(charges.minPartialCharge, chg);
-        // RDKit❗✔️:       charges.maxPartialCharge = std::max(charges.maxPartialCharge, chg);
-        // RDKit❗✔️:     } else {
-        // RDKit❗✔️:       charges.minPartialCharge = chg;
-        // RDKit❗✔️:       charges.maxPartialCharge = chg;
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   }
+        // RDKit✔️✔️: chgs = rdPartialCharges.ComputeGasteigerCharges(mol)
+        // RDKit✔️✔️: minChg = 500.
+        // RDKit✔️✔️: maxChg = -500.
+        // RDKit✔️✔️: for at in mol.GetAtoms():
+        // RDKit✔️✔️:   chg = float(at.GetProp('_GasteigerCharge'))
+        // RDKit✔️✔️:   minChg = min(chg, minChg)
+        // RDKit✔️✔️:   maxChg = max(chg, maxChg)
+        // RDKit✔️✔️: res = (minChg, maxChg)
         let rows = gasteiger_charges(topology, valence, &GasteigerChargeParams::default())
             .map_err(gasteiger_error)?;
         let mut minimum = 500.0;
         let mut maximum = -500.0;
         for row in &rows {
             let charge = row.atom_charge();
-            if charge.is_nan() {
-                minimum = charge;
-                maximum = charge;
-            } else {
-                minimum = source_minimum(minimum, charge);
-                maximum = source_maximum(maximum, charge);
-            }
+            // Python min/max retain their first argument when comparisons
+            // are unordered. A later finite atom can therefore clear a NaN.
+            minimum = source_minimum(charge, minimum);
+            maximum = source_maximum(charge, maximum);
         }
 
-        // RDKit❗✔️:   charges.charges.swap(chgs);
-        // RDKit❗✔️:   double v1 = std::fabs(charges.minPartialCharge);
-        // RDKit❗✔️:   double v2 = std::fabs(charges.maxPartialCharge);
-        // RDKit❗✔️:   charges.maxAbsPartialCharge = std::max(v1,v2);
-        // RDKit❗✔️:   charges.minAbsPartialCharge = std::min(v1,v2);
-        // RDKit❗✔️:   return charges;
+        // RDKit✔️✔️: v1, v2 = _ChargeDescriptors(mol, force)
+        // RDKit✔️✔️: return max(abs(v1), abs(v2))
+        // RDKit✔️✔️: return min(abs(v1), abs(v2))
         let minimum_magnitude = minimum.abs();
         let maximum_magnitude = maximum.abs();
         Ok(Self {
@@ -88,9 +65,8 @@ pub fn max_partial_charge(
     topology: &TopologyBlock,
     valence: Option<&ValenceAssignment>,
 ) -> DescriptorResult<f64> {
-    // RDKit❗✔️: double calcMaxPartialCharge(const ROMol &mol) {
-    // RDKit❗✔️:   return calcPartialCharges(mol).maxPartialCharge;
-    // RDKit❗✔️: }
+    // RDKit✔️✔️: _, res = _ChargeDescriptors(mol, force)
+    // RDKit✔️✔️: return res
     Ok(PartialChargeExtrema::calculate(topology, valence)?.maximum)
 }
 
@@ -99,9 +75,8 @@ pub fn min_partial_charge(
     topology: &TopologyBlock,
     valence: Option<&ValenceAssignment>,
 ) -> DescriptorResult<f64> {
-    // RDKit❗✔️: double calcMinPartialCharge(const ROMol &mol) {
-    // RDKit❗✔️:   return calcPartialCharges(mol).minPartialCharge;
-    // RDKit❗✔️: }
+    // RDKit✔️✔️: res, _ = _ChargeDescriptors(mol, force)
+    // RDKit✔️✔️: return res
     Ok(PartialChargeExtrema::calculate(topology, valence)?.minimum)
 }
 
@@ -110,9 +85,8 @@ pub fn max_abs_partial_charge(
     topology: &TopologyBlock,
     valence: Option<&ValenceAssignment>,
 ) -> DescriptorResult<f64> {
-    // RDKit❗✔️: double calcMaxAbsPartialCharge(const ROMol &mol) {
-    // RDKit❗✔️:   return calcPartialCharges(mol).maxAbsPartialCharge;
-    // RDKit❗✔️: }
+    // RDKit✔️✔️: v1, v2 = _ChargeDescriptors(mol, force)
+    // RDKit✔️✔️: return max(abs(v1), abs(v2))
     Ok(PartialChargeExtrema::calculate(topology, valence)?.maximum_absolute)
 }
 
@@ -121,9 +95,8 @@ pub fn min_abs_partial_charge(
     topology: &TopologyBlock,
     valence: Option<&ValenceAssignment>,
 ) -> DescriptorResult<f64> {
-    // RDKit❗✔️: double calcMinAbsPartialCharge(const ROMol &mol) {
-    // RDKit❗✔️:   return calcPartialCharges(mol).minAbsPartialCharge;
-    // RDKit❗✔️: }
+    // RDKit✔️✔️: v1, v2 = _ChargeDescriptors(mol, force)
+    // RDKit✔️✔️: return min(abs(v1), abs(v2))
     Ok(PartialChargeExtrema::calculate(topology, valence)?.minimum_absolute)
 }
 
@@ -174,7 +147,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn empty_charge_extrema_use_the_pinned_native_sentinels() {
+    fn later_finite_atoms_clear_unordered_charge_extrema() {
+        let fixture = crate::original_condition_fixture::Fixture::from_smiles("C[Fe].CC");
+        let extrema =
+            PartialChargeExtrema::calculate(&fixture.topology, Some(&fixture.valence)).unwrap();
+        assert_eq!(
+            extrema.minimum.to_bits(),
+            (-0.06826238342059164_f64).to_bits()
+        );
+        assert_eq!(extrema.minimum.to_bits(), extrema.maximum.to_bits());
+        assert_eq!(
+            extrema.minimum_absolute.to_bits(),
+            extrema.minimum.abs().to_bits()
+        );
+    }
+
+    #[test]
+    fn empty_charge_extrema_use_the_python_sentinels() {
         let extrema = PartialChargeExtrema::calculate(&TopologyBlock::default(), None).unwrap();
         assert_eq!(extrema.maximum, -500.0);
         assert_eq!(extrema.minimum, 500.0);

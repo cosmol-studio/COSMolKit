@@ -1,9 +1,10 @@
 //! Working-molecule preparation for the eight standard BCUT2D values.
-//! RDKit 4ce8a0636f9b8ef28d6c3f4af4f502392c997d6b, GraphMol/Descriptors/BCUT.cpp
+//! RDKit 2026.09.1, GraphMol/Descriptors/BCUT.cpp
 //! (Copyright 2020 Brian P. Kelley) and GraphMol/AddHs.cpp (Copyright 2003–2025
 //! Greg Landrum and other RDKit contributors); BSD terms are in LICENSE.
 
 mod burden;
+mod eigen;
 
 use cosmolkit_core::{GasteigerChargeParams, RemoveHsParams};
 use cosmolkit_model::{CoordinateBlock, MoleculeProperties, TopologyBlock};

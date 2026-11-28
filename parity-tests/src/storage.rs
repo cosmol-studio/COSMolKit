@@ -19,8 +19,6 @@ pub struct Identity {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference_contract: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub native_build: Option<crate::descriptor_reference::NativeBuild>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_format: Option<crate::corpus::InputFormat>,
     pub rdkit: String,
     pub task: String,
@@ -182,7 +180,6 @@ mod tests {
     fn identity() -> Identity {
         Identity {
             reference_contract: None,
-            native_build: None,
             input_format: None,
             rdkit: "2026.03.6".into(),
             task: "example".into(),
