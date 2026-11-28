@@ -1,5 +1,10 @@
 //! Descriptor queries delegate once and retain native cache/force behavior.
-use crate::{Molecule, descriptor_errors::DescriptorReadError, fields::Field, input};
+use crate::{
+    Molecule,
+    descriptor_errors::{DescriptorReadError, GasteigerChargeParamError},
+    fields::Field,
+    input,
+};
 use wasm_bindgen::prelude::*;
 #[derive(serde::Serialize, tsify::Tsify)]
 #[serde(transparent)]
@@ -118,7 +123,7 @@ macro_rules! project_charge_params {
                 fn into_params(self) -> Result<cosmolkit::GasteigerChargeParams, JsValue> {
                     let iterations = i64::from(self.$count);
                     cosmolkit::GasteigerChargeParams::new(iterations, self.$strict)
-                        .map_err(|error| js_sys::RangeError::new(&error.to_string()).into())
+                        .map_err(GasteigerChargeParamError::from_rust)
                 }
             }
 
@@ -183,7 +188,7 @@ macro_rules! project_charge_params {
                     let value = i64::from(input::read::<i32>(value)?);
                     self.0
                         .[<set_ $count>](value)
-                        .map_err(|error| js_sys::RangeError::new(&error.to_string()).into())
+                        .map_err(GasteigerChargeParamError::from_rust)
                 }
 
                 #[wasm_bindgen(getter, js_name = throwOnParamFailure)]

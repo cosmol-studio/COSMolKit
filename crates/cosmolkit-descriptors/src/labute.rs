@@ -393,7 +393,7 @@ pub fn labute_asa_contributions(
 /// This adapter deliberately does not construct a prepared `DescriptorInput`;
 /// topology-only consumers can preserve the source's cache-before-later-failure
 /// order without acquiring a broader valence or ring requirement.
-pub fn labute_atom_rows(
+pub(crate) fn labute_atom_rows(
     topology: &TopologyBlock,
     state: &mut DescriptorComputedState,
     include_hydrogens: bool,

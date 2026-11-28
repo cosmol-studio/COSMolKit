@@ -3643,8 +3643,8 @@ impl<'a, Access> OpParts<'a, Access> {
         .then(|| owned.source.take_descriptor_queries_runtime());
         #[cfg(feature = "cap-descriptors")]
         if let Some(mut memo) = memo {
-            // Native computed properties can survive Kekulization. Numbered EState
-            // projections depend on the current bond orders, flags and valence.
+            // Native computed properties can survive Kekulization. Non-property
+            // query memo follows the declared chemical-state effects as a group.
             let effects = owned.spec.derived_effects;
             let changed = effects
                 .invalidate
@@ -3653,7 +3653,7 @@ impl<'a, Access> OpParts<'a, Access> {
             if changed.intersects(DerivedState::AROMATICITY.union(DerivedState::VALENCE)) {
                 memo.get_mut()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .clear_estate_projections();
+                    .clear_query_results();
             }
             result.install_descriptor_queries_runtime(memo);
         }

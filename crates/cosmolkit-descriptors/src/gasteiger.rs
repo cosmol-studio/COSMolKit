@@ -7,7 +7,8 @@ use cosmolkit_core::{
 };
 use cosmolkit_model::TopologyBlock;
 
-use crate::{DescriptorComputedState, DescriptorError, DescriptorResult, labute_atom_rows};
+use crate::labute::labute_atom_rows;
+use crate::{DescriptorComputedState, DescriptorError, DescriptorResult};
 
 const PEOE_VSA_CUTOFFS: [f64; 13] = [
     -0.30, -0.25, -0.20, -0.15, -0.10, -0.05, 0.0, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30,

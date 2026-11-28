@@ -3,6 +3,18 @@ use crate::errors::{enum_error, exception};
 use crate::storage::ReadonlyValue;
 use cosmolkit as ck;
 use wasm_bindgen::{JsCast, prelude::*};
+
+enum_error!(GasteigerChargeParamError, GasteigerChargeParamErrorKind, ck::GasteigerChargeParamError, {
+    InvalidIterations => ck::GasteigerChargeParamError::InvalidIterations { .. }
+}, {
+    #[wasm_bindgen(getter)]
+    pub fn iterations(&self) -> i64 {
+        match self.inner.as_ref() {
+            ck::GasteigerChargeParamError::InvalidIterations { iterations } => *iterations,
+        }
+    }
+});
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(

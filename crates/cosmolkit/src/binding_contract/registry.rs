@@ -10040,6 +10040,11 @@ binding_contract! {
         },
         #[cfg(feature = "cap-descriptors")]
         {
+            semantic_id: "types.GasteigerChargeParamError", item: type, owner: type_, rust: crate::GasteigerChargeParamError,
+            python: "GasteigerChargeParamError", javascript: "GasteigerChargeParamError", feature: "cap-descriptors", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
             semantic_id: "GasteigerCharge.atom_charge", javascript_property: getter, item: callable, owner: type_,
             rust: crate::GasteigerCharge::atom_charge, python: "atom_charge", python_property: getter, javascript: "atomCharge",
             feature: "cap-descriptors", status: experimental, kind: instance, parameters: [], output: f64, error: none,

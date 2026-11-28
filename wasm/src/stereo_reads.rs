@@ -99,10 +99,19 @@ crate::fields::value_array!(
 #[wasm_bindgen]
 impl TetrahedralStereo {
     #[wasm_bindgen(constructor)]
-    pub fn new(center: Ts<input::IndexInput>, ligands: Option<LigandTuple>) -> Result<Self, JsValue> {
-        let ligands = ligands.map(|ligands| Vec::<ck::LigandRef>::decode(ligands.as_ref())?
-            .try_into()
-            .map_err(|_: Vec<ck::LigandRef>| JsValue::from(js_sys::TypeError::new("expected four ligands")))).transpose()?;
+    pub fn new(
+        center: Ts<input::IndexInput>,
+        ligands: Option<LigandTuple>,
+    ) -> Result<Self, JsValue> {
+        let ligands = ligands
+            .map(|ligands| {
+                Vec::<ck::LigandRef>::decode(ligands.as_ref())?
+                    .try_into()
+                    .map_err(|_: Vec<ck::LigandRef>| {
+                        JsValue::from(js_sys::TypeError::new("expected four ligands"))
+                    })
+            })
+            .transpose()?;
         Ok(Self(ck::TetrahedralStereo {
             center: ck::AtomId::new(input::read(center)?),
             ligands,
@@ -114,8 +123,13 @@ impl TetrahedralStereo {
     }
     #[wasm_bindgen(getter)]
     pub fn ligands(&self) -> Result<Option<LigandTuple>, JsValue> {
-        self.0.ligands.map(|ligands| Vec::<ck::LigandRef>::get(NativeField::owned(ligands.to_vec()))
-            .map(JsCast::unchecked_into)).transpose()
+        self.0
+            .ligands
+            .map(|ligands| {
+                Vec::<ck::LigandRef>::get(NativeField::owned(ligands.to_vec()))
+                    .map(JsCast::unchecked_into)
+            })
+            .transpose()
     }
 }
 #[derive(serde::Serialize, Tsify)]
@@ -124,10 +138,18 @@ pub struct ChiralCenters(Vec<(usize, String)>);
 #[wasm_bindgen]
 impl Molecule {
     #[wasm_bindgen(js_name=tetrahedralStereo)]
-    pub fn tetrahedral_stereo(&self, include_unassigned: Option<Ts<input::BoolInput>>) -> Result<TetrahedralStereoArray, JsValue> {
+    pub fn tetrahedral_stereo(
+        &self,
+        include_unassigned: Option<Ts<input::BoolInput>>,
+    ) -> Result<TetrahedralStereoArray, JsValue> {
         Vec::<ck::TetrahedralStereo>::get(NativeField::owned(
             self.0
-                .tetrahedral_stereo(include_unassigned.map(input::read::<bool>).transpose()?.unwrap_or(true))
+                .tetrahedral_stereo(
+                    include_unassigned
+                        .map(input::read::<bool>)
+                        .transpose()?
+                        .unwrap_or(true),
+                )
                 .map_err(StereoReadError::from_rust)?,
         ))
     }

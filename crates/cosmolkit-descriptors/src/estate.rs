@@ -208,7 +208,8 @@ impl EStateVsaFamily {
             // RDKit❗✔️:   getLabuteAtomContribs(mol, Vi, hContrib, true, true);
             // RDKit❗✔️:   return Vi;
             // RDKit❗✔️: }
-            let areas = crate::labute_atom_rows(topology, state, true, true)?.atom_contributions;
+            let areas =
+                crate::labute::labute_atom_rows(topology, state, true, true)?.atom_contributions;
             let result = match self {
                 Self::AreaByEState => {
                     // RDKit❗✔️: std::vector<double> calcEState_VSA(const ROMol &mol,
@@ -257,8 +258,8 @@ impl EStateVsaFamily {
 
     fn slot(self, state: &mut crate::DescriptorComputedState) -> &mut Option<Vec<f64>> {
         match self {
-            Self::AreaByEState => &mut state.area_by_estate,
-            Self::EStateByArea => &mut state.estate_by_area,
+            Self::AreaByEState => &mut state.query_results.area_by_estate,
+            Self::EStateByArea => &mut state.query_results.estate_by_area,
         }
     }
 }

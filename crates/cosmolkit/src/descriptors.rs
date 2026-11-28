@@ -193,6 +193,16 @@ fn required_chi_input(
     ))
 }
 
+// Keep simple numbered query forwarding local, as for the EState bins.
+macro_rules! numbered_peoe_bins {
+    ($($name:ident => $index:literal),+ $(,)?) => {$(
+        #[doc = concat!("Return the default PEOE-VSA bin selected by `", stringify!($name), "`.")]
+        pub fn $name(&self) -> Result<f64, DescriptorReadError> {
+            Ok(self.peoe_vsa()?[$index])
+        }
+    )+};
+}
+
 impl Molecule {
     /// Total information content of the current binary molecular graph.
     ///
@@ -3254,74 +3264,12 @@ impl Molecule {
         .map_err(|source| DescriptorReadError::Algorithm { source })
     }
 
-    /// Return output 1 from the default 14-bin PEOE-VSA result.
-    pub fn peoe_vsa_1(&self) -> Result<f64, DescriptorReadError> {
-        Ok(self.peoe_vsa()?[0])
-    }
-
-    /// Return output 2 from the default 14-bin PEOE-VSA result.
-    pub fn peoe_vsa_2(&self) -> Result<f64, DescriptorReadError> {
-        Ok(self.peoe_vsa()?[1])
-    }
-
-    /// Return output 3 from the default 14-bin PEOE-VSA result.
-    pub fn peoe_vsa_3(&self) -> Result<f64, DescriptorReadError> {
-        Ok(self.peoe_vsa()?[2])
-    }
-
-    /// Return output 4 from the default 14-bin PEOE-VSA result.
-    pub fn peoe_vsa_4(&self) -> Result<f64, DescriptorReadError> {
-        Ok(self.peoe_vsa()?[3])
-    }
-
-    /// Return output 5 from the default 14-bin PEOE-VSA result.
-    pub fn peoe_vsa_5(&self) -> Result<f64, DescriptorReadError> {
-        Ok(self.peoe_vsa()?[4])
-    }
-
-    /// Return output 6 from the default 14-bin PEOE-VSA result.
-    pub fn peoe_vsa_6(&self) -> Result<f64, DescriptorReadError> {
-        Ok(self.peoe_vsa()?[5])
-    }
-
-    /// Return output 7 from the default 14-bin PEOE-VSA result.
-    pub fn peoe_vsa_7(&self) -> Result<f64, DescriptorReadError> {
-        Ok(self.peoe_vsa()?[6])
-    }
-
-    /// Return output 8 from the default 14-bin PEOE-VSA result.
-    pub fn peoe_vsa_8(&self) -> Result<f64, DescriptorReadError> {
-        Ok(self.peoe_vsa()?[7])
-    }
-
-    /// Return output 9 from the default 14-bin PEOE-VSA result.
-    pub fn peoe_vsa_9(&self) -> Result<f64, DescriptorReadError> {
-        Ok(self.peoe_vsa()?[8])
-    }
-
-    /// Return output 10 from the default 14-bin PEOE-VSA result.
-    pub fn peoe_vsa_10(&self) -> Result<f64, DescriptorReadError> {
-        Ok(self.peoe_vsa()?[9])
-    }
-
-    /// Return output 11 from the default 14-bin PEOE-VSA result.
-    pub fn peoe_vsa_11(&self) -> Result<f64, DescriptorReadError> {
-        Ok(self.peoe_vsa()?[10])
-    }
-
-    /// Return output 12 from the default 14-bin PEOE-VSA result.
-    pub fn peoe_vsa_12(&self) -> Result<f64, DescriptorReadError> {
-        Ok(self.peoe_vsa()?[11])
-    }
-
-    /// Return output 13 from the default 14-bin PEOE-VSA result.
-    pub fn peoe_vsa_13(&self) -> Result<f64, DescriptorReadError> {
-        Ok(self.peoe_vsa()?[12])
-    }
-
-    /// Return output 14 from the default 14-bin PEOE-VSA result.
-    pub fn peoe_vsa_14(&self) -> Result<f64, DescriptorReadError> {
-        Ok(self.peoe_vsa()?[13])
+    numbered_peoe_bins! {
+        peoe_vsa_1 => 0, peoe_vsa_2 => 1, peoe_vsa_3 => 2,
+        peoe_vsa_4 => 3, peoe_vsa_5 => 4, peoe_vsa_6 => 5,
+        peoe_vsa_7 => 6, peoe_vsa_8 => 7, peoe_vsa_9 => 8,
+        peoe_vsa_10 => 9, peoe_vsa_11 => 10, peoe_vsa_12 => 11,
+        peoe_vsa_13 => 12, peoe_vsa_14 => 13,
     }
 
     /// Source default query; computed values follow the domain owner's cache guards.

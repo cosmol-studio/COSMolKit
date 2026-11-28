@@ -52,7 +52,7 @@ pub use ipc::{
 };
 pub use labute::{
     LabuteAsaContributions, LabuteContributions, labute_asa, labute_asa_contributions,
-    labute_atom_rows, labute_contributions,
+    labute_contributions,
 };
 pub use mqn::{MQN_VERSION, mqns};
 pub use tpsa::{DescriptorComputedState, tpsa_contributions};

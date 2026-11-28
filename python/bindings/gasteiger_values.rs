@@ -1,7 +1,8 @@
 //! Checked Python projections for Gasteiger options and detached atom rows.
 
+use crate::descriptor_errors::GasteigerChargeParamError;
 use cosmolkit as ck;
-use pyo3::{exceptions::PyValueError, prelude::*};
+use pyo3::prelude::*;
 
 #[pyclass(module = "cosmolkit", from_py_object)]
 #[derive(Clone)]
@@ -22,7 +23,7 @@ macro_rules! checked_fields {
                 #[pyo3(signature = ($count=i64::from(ck::GasteigerChargeParams::default().$count()), $strict=ck::GasteigerChargeParams::default().$strict()))]
                 pub(crate) fn new($count: i64, $strict: $strict_ty) -> PyResult<Self> {
                     Ok(Self { inner: ck::GasteigerChargeParams::new($count, $strict)
-                        .map_err(|error| PyValueError::new_err(error.to_string()))? })
+                        .map_err(GasteigerChargeParamError::from_rust)? })
                 }
                 $(#[$count_doc])*
                 #[getter]
@@ -30,7 +31,7 @@ macro_rules! checked_fields {
                 #[setter]
                 fn [<set_ $count>](&mut self, value: i64) -> PyResult<()> {
                     self.inner.[<set_ $count>](value)
-                        .map_err(|error| PyValueError::new_err(error.to_string()))
+                        .map_err(GasteigerChargeParamError::from_rust)
                 }
                 $(#[$strict_doc])*
                 #[getter]
@@ -46,8 +47,7 @@ macro_rules! checked_fields {
 ck::project_configuration!(ck::GasteigerChargeParams, using checked_fields);
 
 crate::configuration::type_projection! {
-    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
-    #[derive(Clone)]
+    value(eq)
     /// Detached Gasteiger charge values for one graph atom.
     pub struct GasteigerCharge {
         pub(crate) inner: ck::GasteigerCharge,

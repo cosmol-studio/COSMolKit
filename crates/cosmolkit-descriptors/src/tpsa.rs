@@ -24,12 +24,25 @@ pub(crate) struct TpsaCacheSlot {
 /// cache-runtime authority: the caller owns the value.
 #[derive(Clone, Default, Debug, PartialEq)]
 pub struct DescriptorComputedState {
+    pub(crate) properties: DescriptorProperties,
+    pub(crate) query_results: DescriptorQueryResults,
+}
+
+/// Source computed properties copied with a native molecule.
+#[derive(Clone, Default, Debug, PartialEq)]
+pub(crate) struct DescriptorProperties {
     tpsa_conventional: TpsaCacheSlot,
     tpsa_include_sand_p: TpsaCacheSlot,
     labute: LabuteCacheSlot,
     crippen: CrippenCacheSlot,
     pub(crate) chi_v_weights: Option<Vec<f64>>,
     pub(crate) chi_n_weights: Option<Vec<f64>>,
+}
+
+/// Query-local memo, separate from the source computed-property store.
+/// Copy and invalidation operate on this whole category, not individual families.
+#[derive(Clone, Default, Debug, PartialEq)]
+pub(crate) struct DescriptorQueryResults {
     pub(crate) area_by_estate: Option<Vec<f64>>,
     pub(crate) estate_by_area: Option<Vec<f64>>,
 }
@@ -40,39 +53,32 @@ impl DescriptorComputedState {
         *self = Self::default();
     }
 
-    /// Invalidate numbered EState projections without discarding native molecule properties.
-    pub fn clear_estate_projections(&mut self) {
-        self.area_by_estate = None;
-        self.estate_by_area = None;
+    /// Invalidate query memo without discarding native computed properties.
+    pub fn clear_query_results(&mut self) {
+        self.query_results = DescriptorQueryResults::default();
     }
 
-    /// Copy native molecule properties; wrapper-local EState vectors start cold.
+    /// Copy native molecule properties; query-local memo starts cold.
     pub fn for_molecule_copy(&self) -> Self {
         Self {
-            tpsa_conventional: self.tpsa_conventional.clone(),
-            tpsa_include_sand_p: self.tpsa_include_sand_p.clone(),
-            labute: self.labute.clone(),
-            crippen: self.crippen.clone(),
-            chi_v_weights: self.chi_v_weights.clone(),
-            chi_n_weights: self.chi_n_weights.clone(),
-            area_by_estate: None,
-            estate_by_area: None,
+            properties: self.properties.clone(),
+            query_results: DescriptorQueryResults::default(),
         }
     }
 
     fn slot(&self, include_sulfur_phosphorus: bool) -> &TpsaCacheSlot {
         if include_sulfur_phosphorus {
-            &self.tpsa_include_sand_p
+            &self.properties.tpsa_include_sand_p
         } else {
-            &self.tpsa_conventional
+            &self.properties.tpsa_conventional
         }
     }
 
     fn slot_mut(&mut self, include_sulfur_phosphorus: bool) -> &mut TpsaCacheSlot {
         if include_sulfur_phosphorus {
-            &mut self.tpsa_include_sand_p
+            &mut self.properties.tpsa_include_sand_p
         } else {
-            &mut self.tpsa_conventional
+            &mut self.properties.tpsa_conventional
         }
     }
 
@@ -92,19 +98,19 @@ impl DescriptorComputedState {
     }
 
     pub(crate) fn labute_slot(&self) -> &LabuteCacheSlot {
-        &self.labute
+        &self.properties.labute
     }
 
     pub(crate) fn labute_slot_mut(&mut self) -> &mut LabuteCacheSlot {
-        &mut self.labute
+        &mut self.properties.labute
     }
 
     pub(crate) fn crippen_slot(&self) -> &CrippenCacheSlot {
-        &self.crippen
+        &self.properties.crippen
     }
 
     pub(crate) fn crippen_slot_mut(&mut self) -> &mut CrippenCacheSlot {
-        &mut self.crippen
+        &mut self.properties.crippen
     }
 }
 

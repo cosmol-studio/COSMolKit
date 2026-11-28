@@ -14,6 +14,10 @@ use cosmolkit as ck;
 use pyo3::prelude::*;
 use std::error::Error;
 
+error_projection!(GasteigerChargeParamError, GasteigerChargeParamErrorKind, ck::GasteigerChargeParamError, "descriptors", {
+    InvalidIterations { iterations: i64 },
+});
+
 error_projection!(DescriptorSearchCause, DescriptorSearchCauseKind, ck::DescriptorSearchCause, "descriptors", {
     Compile(_), Match(_), Context(_),
 }, cause = |inner: &ck::DescriptorSearchCause| match inner {

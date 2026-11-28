@@ -633,7 +633,7 @@ fn cached_v_weights(
     // The source copies cached rows to the caller's output vector before any
     // chemistry work; preserve this O(V) copy and guard ordering exactly.
     if !force {
-        if let Some(rows) = &state.chi_v_weights {
+        if let Some(rows) = &state.properties.chi_v_weights {
             return Ok(rows.clone());
         }
     }
@@ -641,7 +641,7 @@ fn cached_v_weights(
     // RDKit❗✔️: mol.setProp(common_properties::_connectivityHKDeltas, deltas, true);
     // Cold numeric work stays in the one retained kernel, whose additional
     // detached structural-validation cost is documented independently.
-    state.chi_v_weights = Some(rows.clone());
+    state.properties.chi_v_weights = Some(rows.clone());
     Ok(rows)
 }
 
@@ -730,7 +730,7 @@ fn cached_n_weights(
     // The source copies cached rows to the caller's output vector before any
     // chemistry work; preserve this O(V) copy and guard ordering exactly.
     if !force {
-        if let Some(rows) = &state.chi_n_weights {
+        if let Some(rows) = &state.properties.chi_n_weights {
             return Ok(rows.clone());
         }
     }
@@ -738,7 +738,7 @@ fn cached_n_weights(
     // RDKit❗✔️: mol.setProp(common_properties::_connectivityNVals, nVs, true);
     // Cold numeric work stays in the one retained kernel, whose additional
     // detached structural-validation cost is documented independently.
-    state.chi_n_weights = Some(rows.clone());
+    state.properties.chi_n_weights = Some(rows.clone());
     Ok(rows)
 }
 
@@ -830,8 +830,8 @@ mod chi_source_cache_tests {
         };
         let input = ChiInput::new(&topology, &malformed);
         let mut original = crate::DescriptorComputedState::default();
-        original.chi_v_weights = Some(vec![2.0, 3.0]);
-        original.chi_n_weights = Some(vec![4.0, 5.0]);
+        original.properties.chi_v_weights = Some(vec![2.0, 3.0]);
+        original.properties.chi_n_weights = Some(vec![4.0, 5.0]);
         let baseline = original.clone();
         assert_eq!(
             chi_0_v_with_state(&input, false, &mut original).unwrap(),
@@ -860,7 +860,7 @@ mod chi_source_cache_tests {
                 .to_bits(),
             0_f64.to_bits()
         );
-        assert_eq!(peer.chi_v_weights, Some(vec![]));
+        assert_eq!(peer.properties.chi_v_weights, Some(vec![]));
         assert_eq!(original, baseline);
     }
 }
@@ -920,26 +920,35 @@ mod original_condition_cache_tests {
         let fixture = Fixture::from_smiles("CCO");
         let input = fixture.chi();
         let mut state = crate::DescriptorComputedState::default();
-        assert!(state.chi_v_weights.is_none());
-        assert!(state.chi_n_weights.is_none());
+        assert!(state.properties.chi_v_weights.is_none());
+        assert!(state.properties.chi_n_weights.is_none());
         let hk_cold = cached_v_weights(&input, false, &mut state, "hk_deltas").unwrap();
-        let hk_address = state.chi_v_weights.as_ref().unwrap().as_ptr();
+        let hk_address = state.properties.chi_v_weights.as_ref().unwrap().as_ptr();
         let hk_warm = cached_v_weights(&input, false, &mut state, "hk_deltas").unwrap();
         assert_slice_bits(&hk_cold, &hk_warm, "HK cold/warm rows");
-        assert_eq!(hk_address, state.chi_v_weights.as_ref().unwrap().as_ptr());
+        assert_eq!(
+            hk_address,
+            state.properties.chi_v_weights.as_ref().unwrap().as_ptr()
+        );
         assert_ne!(
             hk_cold.as_ptr(),
             hk_warm.as_ptr(),
             "source getProp copies vectors"
         );
-        assert!(state.chi_n_weights.is_none());
+        assert!(state.properties.chi_n_weights.is_none());
         let n_cold = cached_n_weights(&input, false, &mut state, "n_vals").unwrap();
-        let n_address = state.chi_n_weights.as_ref().unwrap().as_ptr();
+        let n_address = state.properties.chi_n_weights.as_ref().unwrap().as_ptr();
         let n_warm = cached_n_weights(&input, false, &mut state, "n_vals").unwrap();
         assert_slice_bits(&n_cold, &n_warm, "nVal cold/warm rows");
-        assert_eq!(n_address, state.chi_n_weights.as_ref().unwrap().as_ptr());
-        assert_eq!(hk_address, state.chi_v_weights.as_ref().unwrap().as_ptr());
-        state.chi_v_weights = Some(vec![9.0, 9.0, 9.0]);
+        assert_eq!(
+            n_address,
+            state.properties.chi_n_weights.as_ref().unwrap().as_ptr()
+        );
+        assert_eq!(
+            hk_address,
+            state.properties.chi_v_weights.as_ref().unwrap().as_ptr()
+        );
+        state.properties.chi_v_weights = Some(vec![9.0, 9.0, 9.0]);
         assert_slice_bits(
             &cached_v_weights(&input, false, &mut state, "hk_deltas").unwrap(),
             &[9.0, 9.0, 9.0],
@@ -948,8 +957,11 @@ mod original_condition_cache_tests {
         let hk_forced = cached_v_weights(&input, true, &mut state, "hk_deltas").unwrap();
         assert_slice_bits(&hk_forced, &hk_cold, "forced HK recomputation");
         assert_ne!(hk_forced.as_ptr(), hk_cold.as_ptr());
-        assert_eq!(n_address, state.chi_n_weights.as_ref().unwrap().as_ptr());
-        state.chi_n_weights = Some(vec![8.0, 8.0, 8.0]);
+        assert_eq!(
+            n_address,
+            state.properties.chi_n_weights.as_ref().unwrap().as_ptr()
+        );
+        state.properties.chi_n_weights = Some(vec![8.0, 8.0, 8.0]);
         assert_slice_bits(
             &cached_n_weights(&input, false, &mut state, "n_vals").unwrap(),
             &[8.0, 8.0, 8.0],

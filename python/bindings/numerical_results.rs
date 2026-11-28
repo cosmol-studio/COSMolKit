@@ -363,8 +363,7 @@ impl MmffOptimizeMoleculeConfsResult {
 }
 
 crate::configuration::type_projection! {
-    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
-    #[derive(Clone)]
+    value(eq)
     /// Molecular Crippen logP and molar refractivity totals.
     pub struct CrippenTotals {
         pub(crate) inner: ck::CrippenTotals,
@@ -394,8 +393,7 @@ impl CrippenTotals {
 }
 
 crate::configuration::type_projection! {
-    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
-    #[derive(Clone)]
+    value(eq)
     /// Labute approximate surface area with per-atom and aggregate hydrogen contributions.
     pub struct LabuteAsaContributions {
         pub(crate) inner: ck::LabuteAsaContributions,

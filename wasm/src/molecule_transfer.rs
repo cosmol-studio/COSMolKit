@@ -107,7 +107,8 @@ impl Molecule {
     /// Includes topology, metadata and all coordinates, but not derived caches.
     #[wasm_bindgen(js_name = toTransferBinary)]
     pub fn to_transfer_binary(&self) -> Result<js_sys::Uint8Array, JsValue> {
-        self.0.to_transfer_binary()
+        self.0
+            .to_transfer_binary()
             .map(|bytes| js_sys::Uint8Array::from(bytes.as_slice()))
             .map_err(MoleculeTransferError::from_rust)
     }

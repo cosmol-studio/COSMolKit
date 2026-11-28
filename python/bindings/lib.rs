@@ -299,7 +299,7 @@ pub mod native {
     use super::descriptor_errors::{
         DescriptorError, DescriptorErrorKind, DescriptorReadError, DescriptorReadErrorKind,
         DescriptorSearchCause, DescriptorSearchCauseKind, GasteigerChargeError,
-        GasteigerChargeErrorKind,
+        GasteigerChargeErrorKind, GasteigerChargeParamError, GasteigerChargeParamErrorKind,
     };
     #[pymodule_export]
     use super::detached_values::{CoordinateBlock, SdfRecordMetadata};

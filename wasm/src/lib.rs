@@ -90,8 +90,6 @@ mod depict_errors;
 mod descriptor_calls;
 #[cfg(feature = "cap-descriptors")]
 mod descriptor_errors;
-#[cfg(feature = "cap-descriptors")]
-mod ipc;
 mod detached_coordinates;
 mod double_stereo_errors;
 #[cfg(feature = "cap-depict")]
@@ -128,6 +126,8 @@ mod indexed_graph_errors;
 mod input;
 mod io_configuration;
 mod io_write_errors;
+#[cfg(feature = "cap-descriptors")]
+mod ipc;
 mod iterator;
 mod kekulize_errors;
 mod legacy_stereo_errors;
